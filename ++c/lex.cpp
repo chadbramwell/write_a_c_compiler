@@ -1,10 +1,10 @@
 #include "lex.h"
 #include "stdio.h"
-#include "memory.h"
 
-bool isletter(char c)
+
+bool is_letter_or_underscore(char c)
 {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 bool isnumber(char c)
 {
@@ -15,170 +15,133 @@ bool iswhitespace(char c)
 	return (c >= '\t' && c <= '\r') || c == ' ';
 }
 
-bool lex(LexConfig* io_config)
+bool lex(const LexInput& input, LexOutput& output)
 {
 	// store length of output buffer and wipe it's length for return value
 	// code below will write to and increment end_output
-	const char* max_output = io_config->end_output;
-	io_config->end_output = io_config->output;
+	const char* stream = input.stream;
+	const char* end_stream = input.stream + input.length;
 
-	while (io_config->input < io_config->end_input)
+	while (stream < end_stream)
 	{
 		// skip whitespace
-		if(iswhitespace(*io_config->input))
+		if(iswhitespace(*stream))
 		{
-			++io_config->input;
+			++stream;
 			continue;
 		}
 
 		// if no room token stream for a single-byte, we are done.
 		// code below assumes there's room for at least one byte.
-		if (io_config->end_output + 1 >= max_output)
+		if (stream + 1 >= end_stream)
 		{
-			io_config->failure_reason = "[lex] no room left in output for tokens";
+			output.failure_location = stream;
+			output.failure_reason = "[lex] no room left in output for tokens";
 			return false;
 		}
 
 		// handle one-char syntax: (){};
-		switch (*io_config->input)
+		switch (*stream)
 		{
 		case '(':
-			io_config->input += 1;
-			*io_config->end_output = eToken::open_parens;
-			io_config->end_output += 1;
+			output.tokens.push_back(Token(eToken::open_parens, stream));
+			++stream;
 			continue;
 		case ')':
-			io_config->input += 1;
-			*io_config->end_output = eToken::closed_parens;
-			io_config->end_output += 1;
+			output.tokens.push_back(Token(eToken::closed_parens, stream));
+			++stream;
 			continue;
 		case '{':
-			io_config->input += 1;
-			*io_config->end_output = eToken::open_brace;
-			io_config->end_output += 1;
+			output.tokens.push_back(Token(eToken::open_brace, stream));
+			++stream;
 			continue;
 		case '}':
-			io_config->input += 1;
-			*io_config->end_output = eToken::closed_brace;
-			io_config->end_output += 1;
+			output.tokens.push_back(Token(eToken::closed_brace, stream));
+			++stream;
 			continue;
 		case ';':
-			io_config->input += 1;
-			*io_config->end_output = eToken::semicolon;
-			io_config->end_output += 1;
+			output.tokens.push_back(Token(eToken::semicolon, stream));
+			++stream;
 			continue;
 		}
 
-		// handle 3 letter keywords 
-		if (io_config->input + 4 < io_config->end_input) // HACK: +1 because we are assuming all keywords require space after.
+		if (isnumber(*stream))
 		{
-			//int
-			if (io_config->input[0] == 'i' &&
-				io_config->input[1] == 'n' &&
-				io_config->input[2] == 't' &&
-				(io_config->input[3] == ' ')) // HACK/TODO: handle otherwhitespace and handle stuff like commas: "void func(int,char**)"
+			Token token(eToken::constant_number, stream);
+			token.number = *stream - '0';
+			++stream;
+
+			while (stream < end_stream && isnumber(*stream))
 			{
-				io_config->input += 3;
-				*io_config->end_output = eToken::k_int;
-				io_config->end_output += 1;
-				continue;
+				token.number *= 10;
+				token.number += *stream - '0';
+				++stream;
 			}
+			output.tokens.push_back(token);
+			continue;
 		}
-
-		// handle 6 letter keywords
-		if (io_config->input + 6 < io_config->end_input)
+		
+		if(is_letter_or_underscore(*stream))
 		{
-			//return
-			if (io_config->input[0] == 'r' &&
-				io_config->input[1] == 'e' &&
-				io_config->input[2] == 't' &&
-				io_config->input[3] == 'u' &&
-				io_config->input[4] == 'r' &&
-				io_config->input[5] == 'n') // todo: handle "returnval" or other things
-			{
-				io_config->input += 6;
-				*io_config->end_output = eToken::k_return;
-				io_config->end_output += 1;
-				continue;
-			}
-		}
+			Token token(eToken::identifier, stream);
 
-		// handle identifiers & literals ("constants") at the same time
-		if (isletter(io_config->input[0]) || isnumber(io_config->input[0]))
-		{
-			const char* input = io_config->input + 1;
-
-			// read until whitespace or end
-			while (input < io_config->end_input && 
-				(isletter(*input) || isnumber(*input)))
+			const char* token_end = stream + 1;
+			while (token_end < end_stream && is_letter_or_underscore(*token_end))
 			{
-				input += 1;
+				++token_end;
 			}
 
-			int identifier_len = input - io_config->input;
-			if (identifier_len > 255)
-			{
-				io_config->failure_reason = "[lex] identifiers, literals, etc.. greater than 255 bytes in length are not supported";
-				return false;
-			}
-			if (identifier_len + 2 > max_output - io_config->end_output) // +1 for eToken id, +1 for length
-			{
-				io_config->failure_reason = "[lex] not enough room for output of identifier";
-				return false;
-			}
+			token.identifier = std::string(stream, token_end);
+			stream = token_end;
 
-			io_config->end_output[0] = eToken::something;
-			io_config->end_output[1] = (char)identifier_len;
-			memcpy(io_config->end_output + 2, io_config->input, identifier_len);
-			io_config->input += identifier_len;
-			io_config->end_output += identifier_len + 2;
+			if (token.identifier == "int")
+				token.type = eToken::keyword_int;
+
+			output.tokens.push_back(token);
 			continue;
 		}
 
-		io_config->failure_reason = "[lex] unsupported data in input";
+		output.failure_location = stream;
+		output.failure_reason = "[lex] unsupported data in input";
 		return false;
 	}
 
 	return true;
 }
 
-void unlex(FILE* out, const char* tokens, const char* tokens_end)
+void unlex(FILE* file, const LexOutput& lex)
 {
-	while (tokens < tokens_end)
+	for(size_t i = 0; i < lex.tokens.size(); ++i)
 	{
-		switch (*tokens)
+		const Token& token = lex.tokens[i];
+		switch (token.type)
 		{
-		case eToken::k_int:
-			fwrite("int ", 1, 4, out);
-			tokens += 1;
+		case eToken::identifier:
+			fwrite(token.identifier.c_str(), 1, token.identifier.length(), file);
 			continue;
-		case eToken::k_return:
-			fwrite("return", 1, 6, out);
-			tokens += 1;
+		case eToken::constant_number:
+			fprintf(file, "%" PRIu64, token.number);
 			continue;
 		case eToken::open_parens:
-			fwrite("(", 1, 1, out);
-			tokens += 1;
+			fwrite("(", 1, 1, file);
 			continue;
 		case eToken::closed_parens:
-			fwrite(")", 1, 1, out);
-			tokens += 1;
+			fwrite(")", 1, 1, file);
 			continue;
 		case eToken::open_brace:
-			fwrite("{", 1, 1, out);
-			tokens += 1;
+			fwrite("{", 1, 1, file);
 			continue;
 		case eToken::closed_brace:
-			fwrite("}", 1, 1, out);
-			tokens += 1;
+			fwrite("}", 1, 1, file);
 			continue;
 		case eToken::semicolon:
-			fwrite(";", 1, 1, out);
-			tokens += 1;
+			fwrite(";", 1, 1, file);
 			continue;
-		case eToken::something:
-			fwrite(tokens + 2, 1, tokens[1], out);
-			tokens += 2 + tokens[1];
+		case eToken::keyword_int:
+			fwrite("int ", 1, 4, file);
+			continue;
+		case eToken::keyword_return:
+			fwrite("return", 1, 6, file);
 			continue;
 		}
 		

@@ -1,34 +1,47 @@
 #pragma once
+#include <inttypes.h>
+#include <cstdio>
+#include <string>
+#include <vector>
 
-enum eToken : char {
-	// keyword [1 byte]
-	k_int,
-	k_return,
-	// syntax [1 byte]
-	open_parens,
-	closed_parens,
-	open_brace,
-	closed_brace,
-	semicolon,
-	// qualifer [1 byte] length [1 byte] value [1 - 255 bytes]
-	something,
+enum eToken : uint8_t
+{
+	identifier = 0,
+	constant_number = 1,
+	open_parens = '(', //40
+	closed_parens = ')',//41
+	semicolon = ';',//59
+	open_brace = '{',//123
+	closed_brace = '}',//125
+
+	keyword_int = 128,
+	keyword_return,
 };
 
-struct LexConfig {
-	// User should set all of these prior to calling lex.
-	// * stream => end_stream is the data to parse.
-	// * tokens => end_tokens is the buffer to output tokens to.
-	// * failure_reason should be set to NULL.
-	// Post-lex, all of these can be used to determine the state of lexing.
-	// * stream will equal end_stream or be at the failed parsing location.
-	// * end_tokens will be set beyond last token.
-	// * if error occurs, failure_reason will be set to a null-terminated string.
-	const char* input;
-	const char* end_input;
-	char* output;
-	char* end_output;
+struct Token
+{
+	eToken type;
+	const char* location;
+
+	std::string identifier;
+	uint64_t number;
+
+	Token(eToken t, const char* loc) : type(t), location(loc) {}
+};
+
+struct LexInput
+{
+	const char* stream;
+	uint64_t length;
+};
+
+struct LexOutput
+{
+	std::vector<Token> tokens;
+
+	const char* failure_location;
 	const char* failure_reason;
 };
 
-bool lex(LexConfig* io_config);
-void unlex(struct _iobuf* out, const char* tokens, const char* tokens_end);
+bool lex(const LexInput& input, LexOutput& output);
+void unlex(FILE* file, const LexOutput& lex);
