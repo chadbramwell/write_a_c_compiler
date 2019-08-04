@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+// Below is an attempt at a simple lexer. It's not meant to be optimal.
+
 enum eToken : uint8_t
 {
 	identifier = 0,
@@ -21,12 +23,12 @@ enum eToken : uint8_t
 struct Token
 {
 	eToken type;
-	const char* location;
+	const char* location; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
 
-	std::string identifier;
-	uint64_t number;
+	std::string identifier; // only valid if type == eToken::identifier or one of the keywords
+	uint64_t number; // only valid if type == eToken::constant_number
 
-	Token(eToken t, const char* loc) : type(t), location(loc) {}
+	explicit Token(eToken t, const char* loc) : type(t), location(loc) {}
 };
 
 struct LexInput
@@ -44,4 +46,4 @@ struct LexOutput
 };
 
 bool lex(const LexInput& input, LexOutput& output);
-void unlex(FILE* file, const LexOutput& lex);
+void dump_lex(FILE* file, const LexOutput& lex);

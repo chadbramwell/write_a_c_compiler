@@ -1,6 +1,4 @@
 #include "lex.h"
-#include "stdio.h"
-
 
 bool is_letter_or_underscore(char c)
 {
@@ -96,6 +94,8 @@ bool lex(const LexInput& input, LexOutput& output)
 
 			if (token.identifier == "int")
 				token.type = eToken::keyword_int;
+			else if (token.identifier == "return")
+				token.type = eToken::keyword_return;
 
 			output.tokens.push_back(token);
 			continue;
@@ -109,7 +109,7 @@ bool lex(const LexInput& input, LexOutput& output)
 	return true;
 }
 
-void unlex(FILE* file, const LexOutput& lex)
+void dump_lex(FILE* file, const LexOutput& lex)
 {
 	for(size_t i = 0; i < lex.tokens.size(); ++i)
 	{
