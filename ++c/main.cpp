@@ -24,20 +24,20 @@ int main(int argc, char** argv)
 	dump_lex(stdout, lex_out);
 	printf("\n");
 
-	ASTInput ast_in;
-	ast_in.tokens = lex_out.tokens.data();
-	ast_in.num_tokens = lex_out.tokens.size();
+	TokenStream ast_in;
+	ast_in.next = lex_out.tokens.data();
+	ast_in.end = lex_out.tokens.data() + lex_out.tokens.size();
 
-	ASTOutput ast_out;
+	AST ast_out;
 	if (!ast(ast_in, ast_out))
 	{
-		printf("ast failure: %s\n", ast_out.failure_reason);
-		dump_ast(ast_out);
+		printf("ast failure\n");
+		dump_ast(stdout, ast_out);
 		return 1;
 	}
 		
 	printf("ast success!\n");
-	dump_ast(ast_out);
+	dump_ast(stdout, ast_out);
 
 	return 0;
 }

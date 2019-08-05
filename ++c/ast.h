@@ -1,38 +1,48 @@
 #pragma once
 #include "lex.h"
 
-enum eAST : char
+struct TokenStream
 {
-	program,
-	function,
-	statement,
-	expression,
+	const Token* next;
+	const Token* end;
 };
 
 struct ASTNode
 {
-	eAST type;
-	std::vector<ASTNode*> children;
-
-	Token* return_type;
-	Token* function_name;
-	Token* params_start; //(
-	Token* params_end; //)
-	Token* body_start;//{
-	Token* body_end; //}
+	virtual ~ASTNode() {}
+	std::vector<std::unique_ptr<ASTNode>> children;
 };
 
-struct ASTInput
+enum eDeclarationSpecifier
 {
-	const Token* tokens;
-	uint64_t num_tokens;
+	ds_int
+};
+struct DeclSpec
+{
+	eDeclarationSpecifier type;
+	//TODO: alignment, pointer depth (i.e. how many "int *****...")
 };
 
-struct ASTOutput
+struct AST_Function : public ASTNode
+{
+	DeclSpec return_type;
+	std::string name;
+	std::vector<ASTNode*> statements;
+};
+
+struct AST_ReturnStatement : public ASTNode
+{
+};
+
+struct AST_Number : public ASTNode
+{
+	uint64_t value;
+};
+
+struct AST
 {
 	ASTNode root;
-	const char* failure_reason;
 };
 
-bool ast(const ASTInput& input, ASTOutput& output);
-void dump_ast(const ASTOutput& output);
+bool ast(TokenStream& tokens, AST& out);
+void dump_ast(FILE* file, const AST& a);
