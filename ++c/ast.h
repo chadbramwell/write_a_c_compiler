@@ -13,6 +13,11 @@ struct ASTNode
 	std::vector<std::unique_ptr<ASTNode>> children;
 };
 
+struct AST_Program : public ASTNode
+{
+
+};
+
 enum eDeclarationSpecifier
 {
 	ds_int
@@ -41,7 +46,7 @@ struct AST_Number : public ASTNode
 
 struct AST
 {
-	ASTNode root;
+	AST_Program root;
 };
 
 bool ast(TokenStream& tokens, AST& out);

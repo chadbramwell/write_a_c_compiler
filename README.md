@@ -1,3 +1,12 @@
+# I'm trying my hand at making a compiler!
+See "++c" folder. - Chad Bramwell
+
+Stages to my compiler: *lex* -> *ast* -> *gen*
+
+Time: first-pass **lex** took a night to write, first-pass **ast** took a night to write, **gen** is WIP.
+
+## See below for original markdown.
+---
 # Write a C Compiler!
 
 This is a set of C test programs to help you write your own compiler. They were written to accompany [this tutorial](https://norasandler.com/2017/11/29/Write-a-Compiler.html).

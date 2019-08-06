@@ -33,6 +33,7 @@ struct Token
 
 struct LexInput
 {
+	const char* filename;
 	const char* stream;
 	uint64_t length;
 };

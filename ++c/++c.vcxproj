@@ -115,11 +115,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="gen.cpp" />
     <ClCompile Include="ast.cpp" />
     <ClCompile Include="lex.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="gen.h" />
     <ClInclude Include="ast.h" />
     <ClInclude Include="lex.h" />
   </ItemGroup>

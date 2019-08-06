@@ -31,7 +31,7 @@ bool lex(const LexInput& input, LexOutput& output)
 
 		// if no room token stream for a single-byte, we are done.
 		// code below assumes there's room for at least one byte.
-		if (stream + 1 >= end_stream)
+		if (stream >= end_stream)
 		{
 			output.failure_location = stream;
 			output.failure_reason = "[lex] no room left in output for tokens";
@@ -84,7 +84,7 @@ bool lex(const LexInput& input, LexOutput& output)
 			Token token(eToken::identifier, stream);
 
 			const char* token_end = stream + 1;
-			while (token_end < end_stream && is_letter_or_underscore(*token_end))
+			while (token_end < end_stream && (is_letter_or_underscore(*token_end) || isnumber(*token_end)))
 			{
 				++token_end;
 			}
@@ -141,7 +141,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
 			fwrite("int ", 1, 4, file);
 			continue;
 		case eToken::keyword_return:
-			fwrite("return", 1, 6, file);
+			fwrite("return ", 1, 7, file);
 			continue;
 		}
 		

@@ -134,26 +134,41 @@ bool ast(TokenStream& tokens, AST& out)
 	return tokens.next == tokens.end;
 }
 
-static void dump_ast_recursive(FILE* file, const ASTNode& self, int tabs)
+const char* to_string(eDeclarationSpecifier ds)
 {
-	printf("%*c", tabs, '\t');
-	
+	switch (ds)
+	{
+	case ds_int: return "INT";
+	}
+	return "????";
+}
+
+static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_indent)
+{
 	if (auto f = dynamic_cast<const AST_Function*>(&self))
-		printf("%s\n", f->name.c_str());
+	{
+		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', to_string(f->return_type.type), f->name.c_str());
+		spaces_indent += 2;
+		fprintf(file, "%*cparams: ()\n", spaces_indent, ' ');
+		fprintf(file, "%*cbody:\n", spaces_indent, ' ');
+		spaces_indent += 2;
+	}
 	else if (auto r = dynamic_cast<const AST_ReturnStatement*>(&self))
-		printf("return\n");
+		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
 	else if (auto n = dynamic_cast<const AST_Number*>(&self))
-		printf("%" PRIu64 "\n", n->value);
+		fprintf(file, "Int<%" PRIu64 ">", n->value);
+	else if (auto p = dynamic_cast<const AST_Program*>(&self))
+		fprintf(file, "program\n");
 	else
-		printf("?????\n");
+		fprintf(file, "%*c?????\n", spaces_indent, ' ');
 
 	for (size_t i = 0; i < self.children.size(); ++i)
 	{
-		dump_ast_recursive(file, *self.children[i], tabs + 1);
+		dump_ast_recursive(file, *self.children[i], spaces_indent + 2);
 	}
 }
 
 void dump_ast(FILE* file, const AST& a)
 {
-	dump_ast_recursive(file, a.root, 0);
+	dump_ast_recursive(file, a.root, 2);
 }

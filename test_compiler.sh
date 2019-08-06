@@ -29,13 +29,14 @@ test_not_implemented () {
 run_our_program () {
     actual_out=`./$1 2>/dev/null`
     actual_exit_code=$?
-    rm $1 2>/dev/null
+    rm $1
+    rm $1.s
 }
 
 run_correct_program () {
-    expected_out=`./a.out`
+    expected_out=`./a.exe`
     expected_exit_code=$?
-    rm a.out
+    rm a.exe
 }
 
 compare_program_results () {
@@ -56,7 +57,7 @@ test_stage () {
     echo "===================Valid Programs==================="
     for prog in `find . -type f -name "*.c" -path "./stage_$1/valid/*" -not -path "*/valid_multifile/*" 2>/dev/null`; do
 
-        gcc -w $prog
+        clang -w $prog
         run_correct_program
 
         base="${prog%.*}" #name of executable (filename w/out extension)
@@ -84,7 +85,7 @@ test_stage () {
     done
     # programs with multiple source files
     for dir in `ls -d stage_$1/valid_multifile/* 2>/dev/null` ; do
-        gcc -w $dir/*
+        clang -w $dir/*
 
         run_correct_program
 
