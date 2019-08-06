@@ -3,7 +3,7 @@ See "++c" folder. - Chad Bramwell
 
 Stages to my compiler: *lex* -> *ast* -> *gen*
 
-Time: first-pass **lex** took a night to write, first-pass **ast** took a night to write, **gen** is WIP.
+8/5/2019 - STAGE 1 TESTS PASS! (took me ~3 days to get here: 1day for lex, 1day for ast, 1day for gen)
 
 ## See below for original markdown.
 ---
