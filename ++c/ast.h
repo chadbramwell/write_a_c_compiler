@@ -39,9 +39,14 @@ struct AST_ReturnStatement : public ASTNode
 {
 };
 
-struct AST_Number : public ASTNode
+struct AST_ConstantNumber : public ASTNode
 {
-	uint64_t value;
+	uint64_t number;
+};
+
+struct AST_UnaryOperation : public ASTNode
+{
+	eToken uop;
 };
 
 struct AST

@@ -41,6 +41,10 @@ bool lex(const LexInput& input, LexOutput& output)
 		// handle one-char syntax: (){};
 		switch (*stream)
 		{
+		case '!':
+			output.tokens.push_back(Token(eToken::bang, stream));
+			++stream;
+			continue;
 		case '(':
 			output.tokens.push_back(Token(eToken::open_parens, stream));
 			++stream;
@@ -49,16 +53,24 @@ bool lex(const LexInput& input, LexOutput& output)
 			output.tokens.push_back(Token(eToken::closed_parens, stream));
 			++stream;
 			continue;
-		case '{':
-			output.tokens.push_back(Token(eToken::open_brace, stream));
-			++stream;
-			continue;
-		case '}':
-			output.tokens.push_back(Token(eToken::closed_brace, stream));
+		case '-':
+			output.tokens.push_back(Token(eToken::minus, stream));
 			++stream;
 			continue;
 		case ';':
 			output.tokens.push_back(Token(eToken::semicolon, stream));
+			++stream;
+			continue;
+		case '{':
+			output.tokens.push_back(Token(eToken::open_curly, stream));
+			++stream;
+			continue;
+		case '}':
+			output.tokens.push_back(Token(eToken::closed_curly, stream));
+			++stream;
+			continue;
+		case '~':
+			output.tokens.push_back(Token(eToken::tilde, stream));
 			++stream;
 			continue;
 		}
@@ -122,27 +134,16 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case eToken::constant_number:
 			fprintf(file, "%" PRIu64, token.number);
 			continue;
-		case eToken::open_parens:
-			fwrite("(", 1, 1, file);
-			continue;
-		case eToken::closed_parens:
-			fwrite(")", 1, 1, file);
-			continue;
-		case eToken::open_brace:
-			fwrite("{", 1, 1, file);
-			continue;
-		case eToken::closed_brace:
-			fwrite("}", 1, 1, file);
-			continue;
-		case eToken::semicolon:
-			fwrite(";", 1, 1, file);
-			continue;
-		case eToken::keyword_int:
-			fwrite("int ", 1, 4, file);
-			continue;
-		case eToken::keyword_return:
-			fwrite("return ", 1, 7, file);
-			continue;
+		case '!': fputc(token.type, file); continue;
+		case '(': fputc(token.type, file); continue;
+		case ')': fputc(token.type, file); continue;
+		case '-': fputc(token.type, file); continue;
+		case ';': fputc(token.type, file); continue;
+		case '{': fputc(token.type, file); continue;
+		case '}': fputc(token.type, file); continue;
+		case '~': fputc(token.type, file); continue;
+		case eToken::keyword_int: fprintf(file, "int "); continue;
+		case eToken::keyword_return: fprintf(file, "return "); continue;
 		}
 		
 		break;// detected token we don't know how to handle

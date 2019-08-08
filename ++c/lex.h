@@ -10,11 +10,15 @@ enum eToken : uint8_t
 {
 	identifier = 0,
 	constant_number = 1,
-	open_parens = '(', //40
-	closed_parens = ')',//41
-	semicolon = ';',//59
-	open_brace = '{',//123
-	closed_brace = '}',//125
+
+	bang			= '!',//ASCII 33
+	open_parens		= '(',//40
+	closed_parens	= ')',//41
+	minus			= '-',//45
+	semicolon		= ';',//59
+	open_curly		= '{',//123
+	closed_curly	= '}',//125
+	tilde			= '~',//126
 
 	keyword_int = 128,
 	keyword_return,

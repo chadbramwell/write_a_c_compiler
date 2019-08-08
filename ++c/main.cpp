@@ -70,7 +70,7 @@ void path_init(path* p, const char* filename)
 int main(int argc, char** argv)
 {
 	FILE* file;
-	bool print_on_success = true;
+	bool debug_print = true;
 
 	LexInput lex_in;
 	lex_in.filename = "ret2";
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
 		{
 			return 1;
 		}
-		print_on_success = false;
+		debug_print = false;
 	}
 
 	LexOutput lex_out;
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 		dump_lex(stdout, lex_out);
 		return 1;
 	}
-	else if (print_on_success)
+	else if (debug_print)
 	{
 		printf("==lex success!==[\n");
 		dump_lex(stdout, lex_out);
@@ -121,7 +121,7 @@ int main(int argc, char** argv)
 		dump_ast(stdout, ast_out);
 		return 1;
 	}
-	else if (print_on_success)
+	else if (debug_print)
 	{
 		printf("==ast success!==[\n");
 		dump_ast(stdout, ast_out);
@@ -144,7 +144,7 @@ int main(int argc, char** argv)
 		dump_asm(stdout, asm_out);
 		return 1;
 	}
-	else if (print_on_success)
+	else if (debug_print)
 	{
 		printf("==gen_asm success!==[\n");
 		dump_asm(stdout, asm_out);
@@ -168,5 +168,8 @@ int main(int argc, char** argv)
 	char clang_buffer[1024];
 	sprintf_s(clang_buffer, "clang %s -o%.*s", filename_buffer, (p.name_end - p.original), p.original);
 	//printf("FILENAME:[%s]\n", clang_buffer);
-	return system(clang_buffer);
+	int error = system(clang_buffer);
+	if(debug_print)
+		printf("Clang Result: %d", error);
+	return error;
 }

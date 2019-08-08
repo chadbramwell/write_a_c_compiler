@@ -30,14 +30,41 @@ main:                                   # @main
 	return output.main != nullptr;
 }
 
+void dump_node(FILE* file, const ASTNode* n)
+{
+	if (auto c = dynamic_cast<const AST_ConstantNumber*>(n))
+	{
+		fprintf(file, "  mov $%" PRIu64 ", %%eax\n", c->number);
+		return;
+	}
+	
+	if (auto u = dynamic_cast<const AST_UnaryOperation*>(n))
+	{
+		for (size_t i = 0; i < n->children.size(); ++i)
+		{
+			dump_node(file, n->children[i].get());
+		}
+
+		switch (u->uop)
+		{
+		case '-': fprintf(file, "  neg %%eax\n"); return;
+		case '~': fprintf(file, "  not %%eax\n"); return;
+		}
+
+		if (u->uop == '!')
+		{
+			fprintf(file, "  cmp $0, %%eax\n");	// set ZF on if exp == 0, set it off otherwise
+			fprintf(file, "  mov $0, %%eax\n"); // zero out EAX (doesn't change FLAGS), xor %eax %eax is better because it sets a flag we can't use it because we depend on the ZF flag on the next line
+			fprintf(file, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
+		}
+	}
+}
+
 void dump_asm_return(FILE* file, const AST_ReturnStatement* r)
 {
 	for (size_t i = 0; i < r->children.size(); ++i)
 	{
-		if (auto n = dynamic_cast<const AST_Number*>(r->children[i].get()))
-		{
-			fprintf(file, "  mov $%" PRIu64 ", %%eax\n", n->value);
-		}
+		dump_node(file, r->children[i].get());
 	}
 
 	fprintf(file, "  ret\n");

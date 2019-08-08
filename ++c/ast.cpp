@@ -37,24 +37,24 @@ bool function_definition(TokenStream& io_tokens, ASTNode& parent)
 	if (tokens.next == tokens.end)
 		return false;
 
-	// open brace
-	if (tokens.next->type != eToken::open_brace)
+	// {
+	if (tokens.next->type != eToken::open_curly)
 		return false;
 	++tokens.next;
 	if (tokens.next == tokens.end)
 		return false;
 
 	// body
-	while (tokens.next != tokens.end)
+	while (tokens.next != tokens.end && tokens.next->type != eToken::closed_curly)
 	{
 		if (!statement(tokens, *func))
-			break;
+			return false;
 	}
 
-	// close brace
+	// }
 	if (tokens.next == tokens.end)
 		return false;
-	if (tokens.next->type != eToken::closed_brace)
+	if (tokens.next->type != eToken::closed_curly)
 		return false;
 	++tokens.next;
 	
@@ -109,15 +109,40 @@ bool statement(TokenStream& tokens, ASTNode& parent)
 	return false;
 }
 
-bool expression(TokenStream& tokens, ASTNode& parent)
+bool expression(TokenStream& io_tokens, ASTNode& parent)
 {
-	if (tokens.next->type == eToken::constant_number)
+	if (io_tokens.next->type == eToken::constant_number)
 	{
-		std::unique_ptr<AST_Number> n(new AST_Number);
-		n->value = tokens.next->number;
+		std::unique_ptr<AST_ConstantNumber> n(new AST_ConstantNumber);
+		n->number = io_tokens.next->number;
 		parent.children.push_back(std::move(n));
-		++tokens.next;
+		++io_tokens.next;
 		return true;
+	}
+	
+	switch (io_tokens.next->type)
+	{
+	case '!':
+	case '-':
+	case '~':
+		{
+			// unary operator, expects expression
+			std::unique_ptr<AST_UnaryOperation> uop(new AST_UnaryOperation);
+			uop->uop = io_tokens.next->type;
+
+			TokenStream tokens = io_tokens;
+			++tokens.next;
+
+			if (tokens.next == tokens.end)
+				return false;
+
+			if (!expression(tokens, *uop))
+				return false;
+
+			parent.children.push_back(std::move(uop));
+			io_tokens = tokens;
+			return true;
+		}
 	}
 	return false;
 }
@@ -155,10 +180,20 @@ static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_inden
 	}
 	else if (auto r = dynamic_cast<const AST_ReturnStatement*>(&self))
 		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
-	else if (auto n = dynamic_cast<const AST_Number*>(&self))
-		fprintf(file, "Int<%" PRIu64 ">", n->value);
+	else if (auto c = dynamic_cast<const AST_ConstantNumber*>(&self))
+		fprintf(file, "Int<%" PRIu64 ">", c->number);
 	else if (auto p = dynamic_cast<const AST_Program*>(&self))
 		fprintf(file, "program\n");
+	else if (auto u = dynamic_cast<const AST_UnaryOperation*>(&self))
+	{
+		fprintf(file, "UnOp(%c, ", u->uop);
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast_recursive(file, *self.children[i], 0);
+		}
+		fputc(')', file);
+		return;
+	}
 	else
 		fprintf(file, "%*c?????\n", spaces_indent, ' ');
 
