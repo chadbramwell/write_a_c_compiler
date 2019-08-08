@@ -4,6 +4,7 @@ See "++c" folder. - Chad Bramwell
 Stages to my compiler: *lex* -> *ast* -> *gen*
 
 8/5/2019 - STAGE 1 TESTS PASS! (took me ~3 days to get here: 1day for lex, 1day for ast, 1day for gen, note that "day" is generous here. More like a few hours each night.)
+8/7/2019 - STAGE 2 TESTS PASS! (took me a few hours today to go from STAGE 1 to STAGE 2)
 
 Useful links:
 http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/
