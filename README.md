@@ -37,6 +37,7 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
 * Focusing on a minimal program "int main(){return 2;}" is fantastic! Let the user know upfront that the way to test is to echo the return code of the program, not to look for a stdout print.
 * Stages format from [this tutorial](https://norasandler.com/2017/11/29/Write-a-Compiler.html) appeals to me. Get something simple done, do the next thing. However the focus on "easier" languages like OCaml not so much.
 * Split "STAGE 1" into multiple parts. It took me 3 days to do Stage 1 in C/C++. Have tests for each of the parts. Going forward, make it easy to test each section of the compiler.
+* How to run tests took longer than I would've liked to figure out. Try to make this clearer to the user: what file should be generated where. And support multiple platforms! (test_compiler.sh assumes linux output files)
 * Tutorial should also include binary generation. Skip the assembler entirely! Not sure the level of complexity there but an executable is just a file format that the OS knows to load into executable memory. It's just data.
 
 ## Open questions I have:
