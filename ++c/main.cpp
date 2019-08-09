@@ -71,6 +71,7 @@ int main(int argc, char** argv)
 {
 	FILE* file;
 	bool debug_print = true;
+	bool dump_to_disk = false;
 
 	LexInput lex_in;
 	lex_in.filename = "ret2";
@@ -103,7 +104,7 @@ int main(int argc, char** argv)
 		dump_lex(stdout, lex_out);
 		printf("\n]\n");
 
-		if (0 == fopen_s(&file, "ret2.lex.txt", "wb"))
+		if (dump_to_disk && 0 == fopen_s(&file, "ret2.lex.txt", "wb"))
 		{
 			dump_lex(file, lex_out);
 			fclose(file);
@@ -119,6 +120,7 @@ int main(int argc, char** argv)
 	{
 		printf("ast failure\n");
 		dump_ast(stdout, ast_out);
+		dump_ast_errors(stdout, lex_in, ast_out);
 		return 1;
 	}
 	else if (debug_print)
@@ -127,7 +129,7 @@ int main(int argc, char** argv)
 		dump_ast(stdout, ast_out);
 		printf("\n]\n");
 
-		if (0 == fopen_s(&file, "ret2.ast.txt", "wb"))
+		if (dump_to_disk && 0 == fopen_s(&file, "ret2.ast.txt", "wb"))
 		{
 			dump_ast(file, ast_out);
 			fclose(file);

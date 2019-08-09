@@ -53,8 +53,20 @@ bool lex(const LexInput& input, LexOutput& output)
 			output.tokens.push_back(Token(eToken::closed_parens, stream));
 			++stream;
 			continue;
+		case '*':
+			output.tokens.push_back(Token(eToken::star, stream));
+			++stream;
+			continue;
+		case '+':
+			output.tokens.push_back(Token(eToken::plus, stream));
+			++stream;
+			continue;
 		case '-':
-			output.tokens.push_back(Token(eToken::minus, stream));
+			output.tokens.push_back(Token(eToken::dash, stream));
+			++stream;
+			continue;
+		case '/':
+			output.tokens.push_back(Token(eToken::forward_slash, stream));
 			++stream;
 			continue;
 		case ';':
@@ -137,7 +149,10 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case '!': fputc(token.type, file); continue;
 		case '(': fputc(token.type, file); continue;
 		case ')': fputc(token.type, file); continue;
+		case '*': fputc(token.type, file); continue;
+		case '+': fputc(token.type, file); continue;
 		case '-': fputc(token.type, file); continue;
+		case '/': fputc(token.type, file); continue;
 		case ';': fputc(token.type, file); continue;
 		case '{': fputc(token.type, file); continue;
 		case '}': fputc(token.type, file); continue;

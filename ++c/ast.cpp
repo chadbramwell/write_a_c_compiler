@@ -47,8 +47,16 @@ bool function_definition(TokenStream& io_tokens, ASTNode& parent)
 	// body
 	while (tokens.next != tokens.end && tokens.next->type != eToken::closed_curly)
 	{
+		const Token* statement_start = tokens.next;
 		if (!statement(tokens, *func))
+		{
+			ASTError e;
+			e.token = statement_start;
+			e.reason = "expected statement in function";
+			func->errors.push_back(e);
+			parent.children.push_back(std::move(func));
 			return false;
+		}
 	}
 
 	// }
@@ -94,7 +102,14 @@ bool return_statement(TokenStream& io_tokens, ASTNode& parent)
 	if (tokens.next == tokens.end)
 		return false;
 	if (tokens.next->type != eToken::semicolon)
+	{
+		ASTError e;
+		e.token = tokens.next;
+		e.reason = "expected semicolon for end of return statement";
+		r->errors.push_back(e);
+		parent.children.push_back(std::move(r));
 		return false;
+	}
 	++tokens.next;
 
 	parent.children.push_back(std::move(r));
@@ -206,4 +221,70 @@ static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_inden
 void dump_ast(FILE* file, const AST& a)
 {
 	dump_ast_recursive(file, a.root, 2);
+}
+
+void dump_ast_errors_recursive(FILE* file, const LexInput& lex, const ASTNode& self)
+{
+	for (size_t i = 0; i < self.children.size(); ++i)
+	{
+		dump_ast_errors_recursive(file, lex, *self.children[i]);
+	}
+	
+	for (size_t i = 0; i < self.errors.size(); ++i)
+	{
+		const ASTError& error = self.errors[i];
+
+		const char* const file_start = lex.stream;
+		const char* const file_end = lex.stream + lex.length;		
+
+		const char* error_location = error.token->location;
+		
+		// line_num & line_start
+		uint64_t line_num = 0;
+		const char* line_start = file_start;
+		const char* line_end = file_end;
+		while (line_start < error_location)
+		{
+			++line_num;
+			const char* new_line_start = line_start;
+			while (new_line_start < file_end && *new_line_start != '\n')
+				++new_line_start;
+			if (new_line_start < file_end) // we must be at '\n', skip it
+				++new_line_start;
+			if (new_line_start < error_location)
+			{
+				line_start = new_line_start;
+				continue;
+			}
+
+			line_end = new_line_start - 2;
+			break;
+		}
+
+		uint64_t char_num = (error_location - line_start);
+
+		fprintf(file, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
+			lex.filename,
+			line_num,
+			char_num,
+			error.reason);
+		fprintf(file, "%.*s\n", 
+			int(line_end - line_start), 
+			line_start);
+		
+		while (char_num)
+		{
+			fputc(' ', file);
+			--char_num;
+		}
+		fputc('^', file);
+		fputc('\n', file);
+	}
+}
+
+void dump_ast_errors(FILE* file, const LexInput& lex, const AST& a)
+{
+	fprintf(file, "\nBEGIN ERRORS=====\n");
+	dump_ast_errors_recursive(file, lex, a.root);
+	fprintf(file, "======END ERRORS\n");
 }

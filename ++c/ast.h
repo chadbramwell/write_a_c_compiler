@@ -7,10 +7,17 @@ struct TokenStream
 	const Token* end;
 };
 
+struct ASTError
+{
+	const Token* token;
+	const char* reason;
+};
+
 struct ASTNode
 {
 	virtual ~ASTNode() {}
 	std::vector<std::unique_ptr<ASTNode>> children;
+	std::vector<ASTError> errors;
 };
 
 struct AST_Program : public ASTNode
@@ -56,3 +63,4 @@ struct AST
 
 bool ast(TokenStream& tokens, AST& out);
 void dump_ast(FILE* file, const AST& a);
+void dump_ast_errors(FILE* file, const LexInput& lex, const AST& a);

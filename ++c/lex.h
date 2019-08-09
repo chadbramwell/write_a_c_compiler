@@ -14,7 +14,10 @@ enum eToken : uint8_t
 	bang			= '!',//ASCII 33
 	open_parens		= '(',//40
 	closed_parens	= ')',//41
-	minus			= '-',//45
+	star			= '*',//42
+	plus			= '+',//43
+	dash			= '-',//45
+	forward_slash	= '/',//47
 	semicolon		= ';',//59
 	open_curly		= '{',//123
 	closed_curly	= '}',//125
