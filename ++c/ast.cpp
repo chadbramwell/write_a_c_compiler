@@ -11,16 +11,17 @@ void append_error(std::vector<ASTError>& o_errors, const Token* token, const cha
 bool function_definition(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
 {
 	TokenStream tokens = io_tokens;
-	std::unique_ptr<AST_Function> func(new AST_Function);
+	ASTNode n;
+	n.is_function = true;
 
 	// decl_spec
-	if (!declaration_specifier(tokens, o_errors, func->return_type))
+	if (!declaration_specifier(tokens, o_errors, n.func_return_type))
 		return false;
 	if (tokens.next == tokens.end)
 		return false;
 
 	// identifier
-	func->name = tokens.next->identifier;
+	n.func_name = tokens.next->identifier;
 	if (tokens.next->type != eToken::identifier)
 		return false;
 	++tokens.next;
@@ -55,7 +56,7 @@ bool function_definition(TokenStream& io_tokens, std::vector<ASTError>& o_errors
 	// body
 	while (tokens.next != tokens.end && tokens.next->type != eToken::closed_curly)
 	{
-		if (!statement(tokens, o_errors, *func))
+		if (!statement(tokens, o_errors, n))
 		{
 			if (!o_errors.empty())
 				return false;
@@ -76,7 +77,7 @@ bool function_definition(TokenStream& io_tokens, std::vector<ASTError>& o_errors
 	}
 	++tokens.next;
 	
-	parent.children.push_back(std::move(func));
+	parent.children.push_back(new ASTNode(n));
 	io_tokens = tokens;
 	return true;
 }
@@ -95,7 +96,8 @@ bool declaration_specifier(TokenStream& tokens, std::vector<ASTError>& o_errors,
 bool return_statement(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
 {
 	TokenStream& tokens = io_tokens;
-	std::unique_ptr<AST_ReturnStatement> r(new AST_ReturnStatement);
+	ASTNode n;
+	n.is_return = true;
 
 	// return
 	if (tokens.next->type != eToken::keyword_return)
@@ -105,7 +107,7 @@ bool return_statement(TokenStream& io_tokens, std::vector<ASTError>& o_errors, A
 		return false;
 
 	// expression
-	if (!expression(tokens, o_errors, *r))
+	if (!expression(tokens, o_errors, n))
 	{
 		append_error(o_errors, tokens.next, "expected expression after return");
 		return false;
@@ -124,7 +126,7 @@ bool return_statement(TokenStream& io_tokens, std::vector<ASTError>& o_errors, A
 	}
 	++tokens.next;
 
-	parent.children.push_back(std::move(r));
+	parent.children.push_back(new ASTNode(n));
 	io_tokens = tokens;
 	return true;
 }
@@ -140,9 +142,10 @@ bool expression(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode
 {
 	if (io_tokens.next->type == eToken::constant_number)
 	{
-		std::unique_ptr<AST_ConstantNumber> n(new AST_ConstantNumber);
-		n->number = io_tokens.next->number;
-		parent.children.push_back(std::move(n));
+		ASTNode n;
+		n.is_number = true;
+		n.number = io_tokens.next->number;
+		parent.children.push_back(new ASTNode(n));
 		++io_tokens.next;
 		return true;
 	}
@@ -154,8 +157,9 @@ bool expression(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode
 	case '~':
 		{
 			// unary operator, expects expression
-			std::unique_ptr<AST_UnaryOperation> uop(new AST_UnaryOperation);
-			uop->uop = io_tokens.next->type;
+			ASTNode n;
+			n.is_unary_op = true;
+			n.unary_op = io_tokens.next->type;
 
 			TokenStream tokens = io_tokens;
 			++tokens.next;
@@ -163,10 +167,10 @@ bool expression(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode
 			if (tokens.next == tokens.end)
 				return false;
 
-			if (!expression(tokens, o_errors, *uop))
+			if (!expression(tokens, o_errors, n))
 				return false;
 
-			parent.children.push_back(std::move(uop));
+			parent.children.push_back(new ASTNode(n));
 			io_tokens = tokens;
 			return true;
 		}
@@ -176,6 +180,8 @@ bool expression(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode
 
 bool ast(TokenStream& tokens, AST& out)
 {
+	out.root.is_program = true;
+
 	while (tokens.next != tokens.end)
 	{
 		if (!function_definition(tokens, out.errors, out.root))
@@ -197,23 +203,23 @@ const char* to_string(eDeclarationSpecifier ds)
 
 static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_indent)
 {
-	if (auto f = dynamic_cast<const AST_Function*>(&self))
+	if (self.is_function)
 	{
-		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', to_string(f->return_type.type), f->name.c_str());
+		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', to_string(self.func_return_type.type), self.func_name.c_str());
 		spaces_indent += 2;
 		fprintf(file, "%*cparams: ()\n", spaces_indent, ' ');
 		fprintf(file, "%*cbody:\n", spaces_indent, ' ');
 		spaces_indent += 2;
 	}
-	else if (auto r = dynamic_cast<const AST_ReturnStatement*>(&self))
+	else if (self.is_return)
 		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
-	else if (auto c = dynamic_cast<const AST_ConstantNumber*>(&self))
-		fprintf(file, "Int<%" PRIu64 ">", c->number);
-	else if (auto p = dynamic_cast<const AST_Program*>(&self))
+	else if (self.is_number)
+		fprintf(file, "Int<%" PRIu64 ">", self.number);
+	else if (self.is_program)
 		fprintf(file, "program\n");
-	else if (auto u = dynamic_cast<const AST_UnaryOperation*>(&self))
+	else if (self.is_unary_op)
 	{
-		fprintf(file, "UnOp(%c, ", u->uop);
+		fprintf(file, "UnOp(%c, ", self.unary_op);
 		for (size_t i = 0; i < self.children.size(); ++i)
 		{
 			dump_ast_recursive(file, *self.children[i], 0);

@@ -70,7 +70,7 @@ void path_init(path* p, const char* filename)
 int main(int argc, char** argv)
 {
 	FILE* file;
-	bool debug_print = true;
+	bool debug_print = false;
 	bool dump_to_disk = false;
 
 	LexInput lex_in;
@@ -88,10 +88,9 @@ int main(int argc, char** argv)
 		{
 			return 1;
 		}
-		debug_print = false;
 	}
 
-	LexOutput lex_out;
+	LexOutput lex_out = {};
 	if (!lex(lex_in, lex_out))
 	{
 		printf("lex failure: %s\n", lex_out.failure_reason);

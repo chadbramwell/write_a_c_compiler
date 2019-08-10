@@ -13,17 +13,6 @@ struct ASTError
 	const char* reason;
 };
 
-struct ASTNode
-{
-	virtual ~ASTNode() {}
-	std::vector<std::unique_ptr<ASTNode>> children;
-};
-
-struct AST_Program : public ASTNode
-{
-
-};
-
 enum eDeclarationSpecifier
 {
 	ds_int
@@ -34,30 +23,30 @@ struct DeclSpec
 	//TODO: alignment, pointer depth (i.e. how many "int *****...")
 };
 
-struct AST_Function : public ASTNode
+struct ASTNode
 {
-	DeclSpec return_type;
-	std::string name;
-	std::vector<ASTNode*> statements;
-};
+	bool is_program;
+	bool is_function;
+	bool is_return;
+	bool is_expression;
+	bool is_number;
+	bool is_unary_op;
+	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
 
-struct AST_ReturnStatement : public ASTNode
-{
-};
+	DeclSpec func_return_type;
+	std::string func_name;
 
-struct AST_ConstantNumber : public ASTNode
-{
 	uint64_t number;
-};
 
-struct AST_UnaryOperation : public ASTNode
-{
-	eToken uop;
+	eToken unary_op;
+	
+	// HACK. I really wish C/C++ zero-initialized by default, it would save so much programmer time.
+	ASTNode() { memset(this, 0, sizeof(ASTNode)); children = std::vector<ASTNode*>(); func_name = std::string(); }
 };
 
 struct AST
 {
-	AST_Program root;
+	ASTNode root;
 	std::vector<ASTError> errors;
 };
 

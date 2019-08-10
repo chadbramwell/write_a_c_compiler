@@ -10,48 +10,18 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
     * Note that "day" is generous. More like a few hours each night.
 * 8/7/2019 - STAGE 2 TESTS PASS! 
     * Took me a few hours to go from STAGE 1 to STAGE 2.
+* 8/10/2019 - STAGE 3 ___INPROGRESS___
+    * Lexing +/* took just a few minutes
+    * Spent the rest of a few hours writing errors for AST stage
+    * Spent a few minutes combining all virtual ASTNodes into a single node in prep for binary_ops (deleted a bunch of code!)
 
 ## Random Thoughts:
 * Lexing is compression.
 * AST is pattern matching.
-* C has gotten more complex over time like C++ and it isn't all for the better
-    * [C11](http://www.open-std.org/JTC1/SC22/WG14/www/docs/n1570.pdf) has 44 keywords.
-    * The older [C99](http://www.open-std.org/JTC1/SC22/WG14/www/docs/n1256.pdf) has 39 keywords
-    * The [C89](https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf) that I learned has just ***32 keywords***.
-    * New keywords in C99  
-        * **inline**
-        * **restrict**
-        * **_Bool**
-        * **_Complex**
-        * **_Imaginary**
-    * New keywords in C11
-        * **_Alignas**
-        * **_Alignof**
-        * **_Atomic**
-        * **_Generic**
-        * **_Noreturn**
-        * **_Static_assert**
-        * **_Thread_local**
-    * "Punctuators"/"Operators" (All 54 of them!)
-        ```
-        [ ] ( ) { } . ->
-        ++ -- & * + - ~ !
-        / % << >> < > <= >= == != ^ | && ||
-        ? : ; ...
-        = *= /= %= += -= <<= >>= &= ^= |=
-        , # ##
-        <: :> <% %> %: %:%:
-        (The last 6 were added in C99. They represent [ ] { } # and ## respectively.)
-        ```
 
 ## TODO
 * "stringpool" for identifier allocations.
-* Combine AST inheritance class structure into a single struct and use a type.
-    * Debugging is painful so this will help a lot.
-    * It'd be nice to simplify all the dynamic_casts. Alternatively I could try going full virtual func call but I want something that's undertstandable as a whole, not as individual parts.
-    * This "style" would match the lexer improving global readability.
 * Remove depedency on clang and generate a binary directly from AST.
-* Errors that are as good as Clang's.
 
 ## Useful links:
 * http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/

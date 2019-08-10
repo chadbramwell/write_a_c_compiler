@@ -3,12 +3,12 @@
 
 struct AsmInput
 {
-	const AST_Program* p;
+	const ASTNode* p;
 };
 
 struct AsmOutput
 {
-	const AST_Function* main;
+	const ASTNode* main;
 };
 
 bool gen_asm(const AsmInput& input, AsmOutput& output);
