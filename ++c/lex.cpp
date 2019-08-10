@@ -42,77 +42,79 @@ bool lex(const LexInput& input, LexOutput& output)
 		switch (*stream)
 		{
 		case '!':
-			output.tokens.push_back(Token(eToken::bang, stream));
+			output.tokens.push_back(Token(eToken::bang, stream, stream+1));
 			++stream;
 			continue;
 		case '(':
-			output.tokens.push_back(Token(eToken::open_parens, stream));
+			output.tokens.push_back(Token(eToken::open_parens, stream, stream + 1));
 			++stream;
 			continue;
 		case ')':
-			output.tokens.push_back(Token(eToken::closed_parens, stream));
+			output.tokens.push_back(Token(eToken::closed_parens, stream, stream + 1));
 			++stream;
 			continue;
 		case '*':
-			output.tokens.push_back(Token(eToken::star, stream));
+			output.tokens.push_back(Token(eToken::star, stream, stream + 1));
 			++stream;
 			continue;
 		case '+':
-			output.tokens.push_back(Token(eToken::plus, stream));
+			output.tokens.push_back(Token(eToken::plus, stream, stream + 1));
 			++stream;
 			continue;
 		case '-':
-			output.tokens.push_back(Token(eToken::dash, stream));
+			output.tokens.push_back(Token(eToken::dash, stream, stream + 1));
 			++stream;
 			continue;
 		case '/':
-			output.tokens.push_back(Token(eToken::forward_slash, stream));
+			output.tokens.push_back(Token(eToken::forward_slash, stream, stream + 1));
 			++stream;
 			continue;
 		case ';':
-			output.tokens.push_back(Token(eToken::semicolon, stream));
+			output.tokens.push_back(Token(eToken::semicolon, stream, stream + 1));
 			++stream;
 			continue;
 		case '{':
-			output.tokens.push_back(Token(eToken::open_curly, stream));
+			output.tokens.push_back(Token(eToken::open_curly, stream, stream + 1));
 			++stream;
 			continue;
 		case '}':
-			output.tokens.push_back(Token(eToken::closed_curly, stream));
+			output.tokens.push_back(Token(eToken::closed_curly, stream, stream + 1));
 			++stream;
 			continue;
 		case '~':
-			output.tokens.push_back(Token(eToken::tilde, stream));
+			output.tokens.push_back(Token(eToken::tilde, stream, stream + 1));
 			++stream;
 			continue;
 		}
 
 		if (isnumber(*stream))
 		{
-			Token token(eToken::constant_number, stream);
-			token.number = *stream - '0';
+			const char* num_start = stream;
+			uint64_t number = *stream - '0';
 			++stream;
 
 			while (stream < end_stream && isnumber(*stream))
 			{
-				token.number *= 10;
-				token.number += *stream - '0';
+				number *= 10;
+				number += *stream - '0';
 				++stream;
 			}
+
+			Token token(eToken::constant_number, num_start, stream);
+			token.number = number;
 			output.tokens.push_back(token);
 			continue;
 		}
 		
 		if(is_letter_or_underscore(*stream))
 		{
-			Token token(eToken::identifier, stream);
-
 			const char* token_end = stream + 1;
 			while (token_end < end_stream && (is_letter_or_underscore(*token_end) || isnumber(*token_end)))
 			{
 				++token_end;
 			}
 
+			Token token(eToken::identifier, stream, token_end);
 			token.identifier = std::string(stream, token_end);
 			stream = token_end;
 

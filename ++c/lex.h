@@ -30,12 +30,15 @@ enum eToken : uint8_t
 struct Token
 {
 	eToken type;
-	const char* location; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
+	const char* start; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
+	const char* end;
 
 	std::string identifier; // only valid if type == eToken::identifier or one of the keywords
 	uint64_t number; // only valid if type == eToken::constant_number
 
-	explicit Token(eToken t, const char* loc) : type(t), location(loc) {}
+	explicit Token(eToken _type, const char* _start, const char* _end) 
+		: type(_type), start(_start), end(_end)
+	{}
 };
 
 struct LexInput

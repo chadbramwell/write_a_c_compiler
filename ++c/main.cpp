@@ -120,7 +120,7 @@ int main(int argc, char** argv)
 	{
 		printf("ast failure\n");
 		dump_ast(stdout, ast_out);
-		dump_ast_errors(stdout, lex_in, ast_out);
+		dump_ast_errors(stderr, ast_out.errors, lex_in);
 		return 1;
 	}
 	else if (debug_print)

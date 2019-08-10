@@ -17,7 +17,6 @@ struct ASTNode
 {
 	virtual ~ASTNode() {}
 	std::vector<std::unique_ptr<ASTNode>> children;
-	std::vector<ASTError> errors;
 };
 
 struct AST_Program : public ASTNode
@@ -59,8 +58,9 @@ struct AST_UnaryOperation : public ASTNode
 struct AST
 {
 	AST_Program root;
+	std::vector<ASTError> errors;
 };
 
 bool ast(TokenStream& tokens, AST& out);
 void dump_ast(FILE* file, const AST& a);
-void dump_ast_errors(FILE* file, const LexInput& lex, const AST& a);
+void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex);
