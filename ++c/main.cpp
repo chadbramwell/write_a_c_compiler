@@ -1,6 +1,7 @@
 #include "lex.h"
 #include "ast.h"
 #include "gen.h"
+#include "timer.h"
 #include "string.h"
 #include "stdio.h"
 
@@ -69,9 +70,18 @@ void path_init(path* p, const char* filename)
 
 int main(int argc, char** argv)
 {
+	Timer main_timer;
+	Timer clang_timer;
+	main_timer.start();
+
+	FILE* timer_log;
+	if (0 != fopen_s(&timer_log, "++c.timer.log", "ab"))
+		return 2;
+
 	FILE* file;
 	bool debug_print = false;
-	bool dump_to_disk = false;
+	bool debug_print_to_disk = false;
+	bool debug_timers = false;
 
 	LexInput lex_in;
 	lex_in.filename = "ret2";
@@ -90,20 +100,25 @@ int main(int argc, char** argv)
 		}
 	}
 
+	path p;
+	path_init(&p, lex_in.filename);
+
 	LexOutput lex_out = {};
 	if (!lex(lex_in, lex_out))
 	{
-		printf("lex failure: %s\n", lex_out.failure_reason);
+		fprintf(stdout, "lex failure: %s\n", lex_out.failure_reason);
 		dump_lex(stdout, lex_out);
+		main_timer.end();
+		fprintf(timer_log, "[%s] lex fail, took %.2fms\n", p.original, main_timer.milliseconds());
 		return 1;
 	}
 	else if (debug_print)
 	{
-		printf("==lex success!==[\n");
+		fprintf(stdout, "==lex success!==[\n");
 		dump_lex(stdout, lex_out);
-		printf("\n]\n");
+		fprintf(stdout, "\n]\n");
 
-		if (dump_to_disk && 0 == fopen_s(&file, "ret2.lex.txt", "wb"))
+		if (debug_print_to_disk && 0 == fopen_s(&file, "ret2.lex.txt", "wb"))
 		{
 			dump_lex(file, lex_out);
 			fclose(file);
@@ -117,18 +132,20 @@ int main(int argc, char** argv)
 	AST ast_out;
 	if (!ast(ast_in, ast_out))
 	{
-		printf("ast failure\n");
+		fprintf(stdout, "ast failure\n");
 		dump_ast(stdout, ast_out);
-		dump_ast_errors(stderr, ast_out.errors, lex_in);
+		dump_ast_errors(stdout, ast_out.errors, lex_in);
+		main_timer.end();
+		fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
 		return 1;
 	}
 	else if (debug_print)
 	{
-		printf("==ast success!==[\n");
+		fprintf(stdout, "==ast success!==[\n");
 		dump_ast(stdout, ast_out);
-		printf("\n]\n");
+		fprintf(stdout, "\n]\n");
 
-		if (dump_to_disk && 0 == fopen_s(&file, "ret2.ast.txt", "wb"))
+		if (debug_print_to_disk && 0 == fopen_s(&file, "ret2.ast.txt", "wb"))
 		{
 			dump_ast(file, ast_out);
 			fclose(file);
@@ -141,19 +158,20 @@ int main(int argc, char** argv)
 	AsmOutput asm_out;
 	if (!gen_asm(asm_in, asm_out))
 	{
-		printf("gen_asm failure\n");
+		fprintf(stdout, "gen_asm failure\n");
 		dump_asm(stdout, asm_out);
+		main_timer.end();
+		fprintf(timer_log, "[%s] gen_asm failed, took %.2fms\n", p.original, main_timer.milliseconds());
 		return 1;
 	}
 	else if (debug_print)
 	{
-		printf("==gen_asm success!==[\n");
+		fprintf(stdout, "==gen_asm success!==[\n");
 		dump_asm(stdout, asm_out);
-		printf("\n]\n");
+		fprintf(stdout, "\n]\n");
 	}
 
-	path p;
-	path_init(&p, lex_in.filename);
+	
 
 	// write assembly(.s) file.
 	char filename_buffer[1024];
@@ -166,11 +184,28 @@ int main(int argc, char** argv)
 	}
 
 	// generate exe with clang
-	char clang_buffer[1024];
-	sprintf_s(clang_buffer, "clang %s -o%.*s", filename_buffer, (p.name_end - p.original), p.original);
-	//printf("FILENAME:[%s]\n", clang_buffer);
-	int error = system(clang_buffer);
-	if(debug_print)
-		printf("Clang Result: %d", error);
-	return error;
+	int clang_error = 0;
+	{
+		char clang_buffer[1024];
+		sprintf_s(clang_buffer, "clang %s -o%.*s", filename_buffer, (p.name_end - p.original), p.original);
+		//printf("FILENAME:[%s]\n", clang_buffer);
+		clang_timer.start();
+		clang_error = system(clang_buffer);
+		clang_timer.end();
+		if (debug_print)
+			fprintf(stdout, "Clang Result: %d\n", clang_error);
+		if(debug_timers)
+			fprintf(stdout, "Clang Took %.2fms\n", clang_timer.milliseconds());
+	}
+
+	main_timer.end();
+	if(debug_timers) fprintf(stdout, "Total Time: %.2fms\n", main_timer.milliseconds());
+
+	fprintf(timer_log, "[%s] total time: %.2fms of which a system call to clang took %.2fms\n",
+		p.original,
+		main_timer.milliseconds(),
+		clang_timer.milliseconds());
+	fclose(timer_log);
+
+	return clang_error;
 }

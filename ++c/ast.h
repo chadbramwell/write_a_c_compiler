@@ -1,6 +1,9 @@
 #pragma once
 #include "lex.h"
 
+// Below is an attempt at a simple AST generator. It's meant to be simple.
+// note: ASTNodes are dynamically allocated and never freed.
+
 struct TokenStream
 {
 	const Token* next;

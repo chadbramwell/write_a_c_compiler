@@ -119,11 +119,13 @@
     <ClCompile Include="ast.cpp" />
     <ClCompile Include="lex.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="timer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gen.h" />
     <ClInclude Include="ast.h" />
     <ClInclude Include="lex.h" />
+    <ClInclude Include="timer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
