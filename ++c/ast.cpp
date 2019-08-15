@@ -1,211 +1,355 @@
 #include "ast.h"
 #include "lex.h"
+#include "debug.h"
 
-bool function_definition(TokenStream& tokens, std::vector<ASTError>& o_errors, ASTNode& parent);
-bool declaration_specifier(TokenStream& tokens, std::vector<ASTError>& o_errors, DeclSpec& out);
-bool statement(TokenStream& tokens, std::vector<ASTError>& o_errors, ASTNode& parent);
-bool expression(TokenStream& tokens, std::vector<ASTError>& o_errors, ASTNode& parent);
+// STAGE 3 grammar from: https://norasandler.com/2017/12/15/Write-a-Compiler-3.html
+// <program> :: = <function>
+// <function> :: = "int" <id> "(" ")" "{" <statement> "}"
+// <statement> :: = "return" <exp> ";"
+// <exp> :: = <term>{ ("+" | "-") < term > }
+// <term> :: = <factor>{ ("*" | "/") < factor > }
+// <factor> :: = "(" <exp> ")" | <unary_op> <factor> | <int>
 
-void append_error(std::vector<ASTError>& o_errors, const Token* token, const char* reason);
+ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors);
 
-bool function_definition(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
+void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason);
+
+ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
+	// <function> :: = "int" <id> "(" ")" "{" <statement> "}"
+
 	TokenStream tokens = io_tokens;
 	ASTNode n;
 	n.is_function = true;
 
-	// decl_spec
-	if (!declaration_specifier(tokens, o_errors, n.func_return_type))
-		return false;
+	// int
+	if (tokens.next->type != eToken::keyword_int)
+		return NULL;
+	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
 
 	// identifier
 	n.func_name = tokens.next->identifier;
 	if (tokens.next->type != eToken::identifier)
-		return false;
+		return NULL;
 	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
 
 	// parens
 	if (tokens.next->type != eToken::open_parens)
 	{
-		append_error(o_errors, tokens.next, "expected (");
-		return false;
+		append_error(errors, tokens.next, "expected (");
+		return NULL;
 	}
 	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
 	if (tokens.next->type != eToken::closed_parens)
 	{
-		append_error(o_errors, tokens.next, "expected )");
-		return false;
+		append_error(errors, tokens.next, "expected )");
+		return NULL;
 	}
 	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
 
 	// {
 	if (tokens.next->type != eToken::open_curly)
-		return false;
+		return NULL;
 	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
 
 	// body
 	while (tokens.next != tokens.end && tokens.next->type != eToken::closed_curly)
 	{
-		if (!statement(tokens, o_errors, n))
+		ASTNode* s = parse_statement(tokens, errors);
+		if (!s)
 		{
-			if (!o_errors.empty())
-				return false;
+			if (errors.size() > 0)
+				return NULL;
 			break;
 		}
+		
+		n.children.push_back(s);
 	}
 
 	// }
 	if (tokens.next == tokens.end)
 	{
-		append_error(o_errors, tokens.next, "expected } but no more tokens");
-		return false;
+		append_error(errors, tokens.next, "expected } but no more tokens");
+		return NULL;
 	}
 	if (tokens.next->type != eToken::closed_curly)
 	{
-		append_error(o_errors, tokens.next, "expected }");
-		return false;
+		append_error(errors, tokens.next, "expected }");
+		return NULL;
 	}
 	++tokens.next;
 	
-	parent.children.push_back(new ASTNode(n));
 	io_tokens = tokens;
-	return true;
+	return new ASTNode(n);
 }
 
-bool declaration_specifier(TokenStream& tokens, std::vector<ASTError>& o_errors, DeclSpec& out)
+ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-	if (tokens.next->type == eToken::keyword_int)
-	{
-		out.type = eDeclarationSpecifier::ds_int;
-		++tokens.next;
-		return true;
-	}
-	return false;
-}
-
-bool return_statement(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
-{
+	// <statement> :: = "return" <exp> ";"
 	TokenStream& tokens = io_tokens;
-	ASTNode n;
-	n.is_return = true;
 
 	// return
 	if (tokens.next->type != eToken::keyword_return)
-		return false;
+		return NULL;
 	++tokens.next;
 	if (tokens.next == tokens.end)
-		return false;
+		return NULL;
+
+	ASTNode return_statement;
+	return_statement.is_return = true;
 
 	// expression
-	if (!expression(tokens, o_errors, n))
+	ASTNode* expr = parse_expression(tokens, errors);
+	if(!expr)
 	{
-		append_error(o_errors, tokens.next, "expected expression after return");
-		return false;
+		append_error(errors, tokens.next, "expected expression after return");
+		return NULL;
 	}
+	return_statement.children.push_back(expr);
 
 	// semicolon
 	if (tokens.next == tokens.end)
 	{
-		append_error(o_errors, tokens.next, "expected ; but no more tokens");
-		return false;
+		append_error(errors, tokens.next, "expected ; but no more tokens");
+		return NULL;
 	}
 	if (tokens.next->type != eToken::semicolon)
 	{
-		append_error(o_errors, tokens.next, "expected ; at end of return expression");
-		return false;
+		append_error(errors, tokens.next, "expected ; at end of return expression");
+		return NULL;
 	}
-	++tokens.next;
 
-	parent.children.push_back(new ASTNode(n));
+	++tokens.next;	
+	
 	io_tokens = tokens;
-	return true;
+	return new ASTNode(return_statement);
 }
 
-bool statement(TokenStream& tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
+ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-	if (return_statement(tokens, o_errors, parent))
-		return true;
-	return false;
+	// <exp> :: = <term>{ ("+" | "-") < term > }
+
+	TokenStream tokens = io_tokens;
+	ASTNode* term = parse_term(tokens, errors);
+
+	if(!term)
+		return NULL;
+
+	if (tokens.next->type != '+' &&
+		tokens.next->type != '-')
+	{
+		io_tokens = tokens;
+		return term;
+	}
+
+	ASTNode binop;
+	binop.is_binary_op = true;
+
+	for(;;)
+	{
+		binop.binary_op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected term after + or - but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* term2 = parse_term(tokens, errors);
+		if (!term2)
+		{
+			append_error(errors, tokens.next, "expected term after + or -");
+			return NULL;
+		}
+
+		binop.children.push_back(term);
+		binop.children.push_back(term2);
+
+		// Gross, but it works. We will wrap around, set our binary_op to next token type and
+		// use previous binop as term for next binop
+		if (tokens.next != tokens.end && (tokens.next->type == '-' || tokens.next->type == '+'))
+		{
+			term = new ASTNode(binop);
+			binop.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(binop);
 }
 
-bool expression(TokenStream& io_tokens, std::vector<ASTError>& o_errors, ASTNode& parent)
+ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
+	// <term> :: = <factor>{ ("*" | "/") < factor > }
+
+	TokenStream tokens = io_tokens;
+
+	ASTNode* factor = parse_factor(tokens, errors);
+	if(!factor)
+		return NULL;
+
+	if (tokens.next->type != '*' &&
+		tokens.next->type != '/')
+	{
+		io_tokens = tokens;
+		return factor;
+	}
+
+	ASTNode binop;
+	binop.is_binary_op = true;
+
+	for (;;)
+	{
+		binop.binary_op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected factor after * or / but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* factor2 = parse_factor(tokens, errors);
+		if (!factor2)
+		{
+			append_error(errors, tokens.next, "expected factor after * or /");
+			return NULL;
+		}
+
+		binop.children.push_back(factor);
+		binop.children.push_back(factor2);
+
+		// Gross, but it works. We will wrap around, set our binary_op to next token type and
+		// use previous binop as term for next binop
+		if (tokens.next != tokens.end && (tokens.next->type == '*' || tokens.next->type == '/'))
+		{
+			factor = new ASTNode(binop);
+			binop.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(binop);
+}
+
+ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <factor> :: = "(" <exp> ")" | <unary_op> <factor> | <int>
+	if (io_tokens.next == io_tokens.end)
+		return NULL;
+
+	if (io_tokens.next->type == eToken::open_parens)
+	{
+		TokenStream tokens = io_tokens;
+		++tokens.next;
+		if (tokens.next == tokens.end)
+			return NULL;
+
+		ASTNode* expression = parse_expression(tokens, errors);
+		if(!expression)
+		{
+			append_error(errors, tokens.next, "expected expression after (");
+			return NULL;
+		}
+
+		if (tokens.next->type != eToken::closed_parens)
+		{
+			append_error(errors, tokens.next, "expected ) after expression");
+			return NULL;
+		}
+
+		++tokens.next;
+
+		io_tokens = tokens;
+		return expression;
+	}
+
+	if (io_tokens.next->type == '!' ||
+		io_tokens.next->type == '-' ||
+		io_tokens.next->type == '~')
+	{
+		// unary operator, expects factor
+		ASTNode n;
+		n.is_unary_op = true;
+		n.unary_op = io_tokens.next->type;
+
+		TokenStream tokens = io_tokens;
+		++tokens.next;
+
+		if (tokens.next == tokens.end)
+			return NULL;
+
+		ASTNode* factor = parse_factor(tokens, errors);
+		if(!factor)
+			return NULL;
+		n.children.push_back(factor);
+
+		io_tokens = tokens;
+		return new ASTNode(n);
+	}
+
 	if (io_tokens.next->type == eToken::constant_number)
 	{
 		ASTNode n;
 		n.is_number = true;
 		n.number = io_tokens.next->number;
-		parent.children.push_back(new ASTNode(n));
 		++io_tokens.next;
-		return true;
+		return new ASTNode(n);
 	}
-	
-	switch (io_tokens.next->type)
-	{
-	case '!':
-	case '-':
-	case '~':
-		{
-			// unary operator, expects expression
-			ASTNode n;
-			n.is_unary_op = true;
-			n.unary_op = io_tokens.next->type;
 
-			TokenStream tokens = io_tokens;
-			++tokens.next;
-
-			if (tokens.next == tokens.end)
-				return false;
-
-			if (!expression(tokens, o_errors, n))
-				return false;
-
-			parent.children.push_back(new ASTNode(n));
-			io_tokens = tokens;
-			return true;
-		}
-	}
-	return false;
+	return NULL;
 }
 
-bool ast(TokenStream& tokens, AST& out)
+ASTNode* ast(TokenStream& tokens, std::vector<ASTError>& errors)
 {
-	out.root.is_program = true;
+	ASTNode n;
+	n.is_program = true;
 
 	while (tokens.next != tokens.end)
 	{
-		if (!function_definition(tokens, out.errors, out.root))
-			break;
+		if (ASTNode* f = parse_function(tokens, errors))
+		{
+			n.children.push_back(f);
+			continue;
+		}
+		break;
 	}
 
 	// success if we parsed all tokens
-	return tokens.next == tokens.end;
-}
-
-const char* to_string(eDeclarationSpecifier ds)
-{
-	switch (ds)
+	if (tokens.next == tokens.end)
 	{
-	case ds_int: return "INT";
+		return new ASTNode(n);
 	}
-	return "????";
+
+	return NULL;
 }
 
-static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_indent)
+void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 {
 	if (self.is_function)
 	{
-		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', to_string(self.func_return_type.type), self.func_name.c_str());
+		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', "INT", self.func_name.c_str());
 		spaces_indent += 2;
 		fprintf(file, "%*cparams: ()\n", spaces_indent, ' ');
 		fprintf(file, "%*cbody:\n", spaces_indent, ' ');
@@ -222,7 +366,19 @@ static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_inden
 		fprintf(file, "UnOp(%c, ", self.unary_op);
 		for (size_t i = 0; i < self.children.size(); ++i)
 		{
-			dump_ast_recursive(file, *self.children[i], 0);
+			dump_ast(file, *self.children[i], 0);
+		}
+		fputc(')', file);
+		return;
+	}
+	else if (self.is_binary_op)
+	{
+		fprintf(file, "BinOp(%c, ", self.binary_op);
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast(file, *self.children[i], 0);
+			if (i + 1 < self.children.size())
+				fprintf(file, ", ");
 		}
 		fputc(')', file);
 		return;
@@ -232,21 +388,18 @@ static void dump_ast_recursive(FILE* file, const ASTNode& self, int spaces_inden
 
 	for (size_t i = 0; i < self.children.size(); ++i)
 	{
-		dump_ast_recursive(file, *self.children[i], spaces_indent + 2);
+		dump_ast(file, *self.children[i], spaces_indent + 2);
 	}
 }
 
-void dump_ast(FILE* file, const AST& a)
-{
-	dump_ast_recursive(file, a.root, 2);
-}
-
-void append_error(std::vector<ASTError>& o_errors, const Token* token, const char* reason)
+void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason)
 {
 	ASTError e;
 	e.token = token;
 	e.reason = reason;
-	o_errors.push_back(e);
+	errors.push_back(e);
+
+	debug_break();
 }
 
 void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex)
@@ -283,7 +436,7 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
 			break;
 		}
 
-		uint64_t char_num = (error_location - line_start);
+		uint64_t char_num = uint64_t(error_location - line_start);
 
 		fprintf(file, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
 			lex.filename,

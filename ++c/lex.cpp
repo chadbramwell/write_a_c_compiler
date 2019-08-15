@@ -90,7 +90,7 @@ bool lex(const LexInput& input, LexOutput& output)
 		if (isnumber(*stream))
 		{
 			const char* num_start = stream;
-			uint64_t number = *stream - '0';
+			uint64_t number = uint64_t(*stream - '0');
 			++stream;
 
 			while (stream < end_stream && isnumber(*stream))

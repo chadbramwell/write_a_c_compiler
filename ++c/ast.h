@@ -16,43 +16,27 @@ struct ASTError
 	const char* reason;
 };
 
-enum eDeclarationSpecifier
-{
-	ds_int
-};
-struct DeclSpec
-{
-	eDeclarationSpecifier type;
-	//TODO: alignment, pointer depth (i.e. how many "int *****...")
-};
-
 struct ASTNode
 {
 	bool is_program;
 	bool is_function;
 	bool is_return;
-	bool is_expression;
 	bool is_number;
 	bool is_unary_op;
+	bool is_binary_op;
+	eToken unary_op;
+	eToken binary_op;
+
 	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
 
-	DeclSpec func_return_type;
 	std::string func_name;
 
 	uint64_t number;
-
-	eToken unary_op;
 	
 	// HACK. I really wish C/C++ zero-initialized by default, it would save so much programmer time.
 	ASTNode() { memset(this, 0, sizeof(ASTNode)); children = std::vector<ASTNode*>(); func_name = std::string(); }
 };
 
-struct AST
-{
-	ASTNode root;
-	std::vector<ASTError> errors;
-};
-
-bool ast(TokenStream& tokens, AST& out);
-void dump_ast(FILE* file, const AST& a);
+ASTNode* ast(TokenStream& tokens, std::vector<ASTError>& errors);
+void dump_ast(FILE* file, const ASTNode& self, int spaces_indent);
 void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex);

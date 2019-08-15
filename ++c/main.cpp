@@ -2,6 +2,8 @@
 #include "ast.h"
 #include "gen.h"
 #include "timer.h"
+#include "debug.h"
+
 #include "string.h"
 #include "stdio.h"
 
@@ -15,7 +17,7 @@ bool read_file_into_lex_input(LexInput* lex_in)
 	}
 
 	fseek(file, 0, SEEK_END);
-	long file_size = ftell(file);
+	uint32_t file_size = ftell(file);
 	rewind(file);
 
 	void* memory = malloc(file_size);
@@ -24,7 +26,7 @@ bool read_file_into_lex_input(LexInput* lex_in)
 
 	if (file_size != actually_read)
 	{
-		printf("failed to read file %s of size %d\n", lex_in->filename, file_size);
+		printf("failed to read file %s of size %" PRIu32 "\n", lex_in->filename, file_size);
 		free(memory);
 		return false;
 	}
@@ -39,10 +41,17 @@ struct path
 	const char* original;
 	const char* name_start;
 	const char* name_end;
+
+	char lex_path[256];
+	char ast_path[256];
+	char asm_path[256];
+	char exe_path[256];
 };
 
 void path_init(path* p, const char* filename)
 {
+	*p = {};
+
 	p->original = filename;
 	p->name_start = filename;
 	p->name_end = filename;
@@ -66,6 +75,12 @@ void path_init(path* p, const char* filename)
 	if (end == filename)
 		return;
 	p->name_start = end+1;
+
+	int name_no_path_len = int(p->name_end - p->original);
+	sprintf_s(p->lex_path, "%.*s.lex.txt", name_no_path_len, p->original);
+	sprintf_s(p->ast_path, "%.*s.ast.txt", name_no_path_len, p->original);
+	sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
+	sprintf_s(p->exe_path, "%.*s.exe", name_no_path_len, p->original);
 }
 
 int main(int argc, char** argv)
@@ -110,6 +125,7 @@ int main(int argc, char** argv)
 		dump_lex(stdout, lex_out);
 		main_timer.end();
 		fprintf(timer_log, "[%s] lex fail, took %.2fms\n", p.original, main_timer.milliseconds());
+		debug_break();
 		return 1;
 	}
 	else if (debug_print)
@@ -118,7 +134,7 @@ int main(int argc, char** argv)
 		dump_lex(stdout, lex_out);
 		fprintf(stdout, "\n]\n");
 
-		if (debug_print_to_disk && 0 == fopen_s(&file, "ret2.lex.txt", "wb"))
+		if (debug_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
 		{
 			dump_lex(file, lex_out);
 			fclose(file);
@@ -129,57 +145,59 @@ int main(int argc, char** argv)
 	ast_in.next = lex_out.tokens.data();
 	ast_in.end = lex_out.tokens.data() + lex_out.tokens.size();
 
-	AST ast_out;
-	if (!ast(ast_in, ast_out))
+	std::vector<ASTError> errors;
+	ASTNode* root = ast(ast_in, errors);
+	if (!root)
 	{
 		fprintf(stdout, "ast failure\n");
-		dump_ast(stdout, ast_out);
-		dump_ast_errors(stdout, ast_out.errors, lex_in);
+		dump_ast_errors(stdout, errors, lex_in);
 		main_timer.end();
 		fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
+		debug_break();
 		return 1;
 	}
 	else if (debug_print)
 	{
 		fprintf(stdout, "==ast success!==[\n");
-		dump_ast(stdout, ast_out);
+		dump_ast(stdout, *root, 0);
 		fprintf(stdout, "\n]\n");
 
-		if (debug_print_to_disk && 0 == fopen_s(&file, "ret2.ast.txt", "wb"))
+		if (debug_print_to_disk && 0 == fopen_s(&file, p.ast_path, "wb"))
 		{
-			dump_ast(file, ast_out);
+			dump_ast(file, *root, 0);
 			fclose(file);
 		}
 	}
 
 	AsmInput asm_in;
-	asm_in.p = &ast_out.root;
-	
-	AsmOutput asm_out;
-	if (!gen_asm(asm_in, asm_out))
+	asm_in.root = root;
+
+	FILE* asm_test_file;
+	if (0 != tmpfile_s(&asm_test_file))
+		return 3;
+	if (!gen_asm(asm_test_file, asm_in))
 	{
 		fprintf(stdout, "gen_asm failure\n");
-		dump_asm(stdout, asm_out);
+		gen_asm(stdout, asm_in);
 		main_timer.end();
 		fprintf(timer_log, "[%s] gen_asm failed, took %.2fms\n", p.original, main_timer.milliseconds());
+		debug_break();
 		return 1;
 	}
 	else if (debug_print)
 	{
 		fprintf(stdout, "==gen_asm success!==[\n");
-		dump_asm(stdout, asm_out);
+		gen_asm(stdout, asm_in);
 		fprintf(stdout, "\n]\n");
 	}
+	fclose(asm_test_file);
 
 	
 
 	// write assembly(.s) file.
-	char filename_buffer[1024];
-	sprintf_s(filename_buffer, "%.*s.s", (p.name_end - p.original), p.original);
-	//printf("\nFILENAME:[%s]\n", filename_buffer);
-	if (0 == fopen_s(&file, filename_buffer, "wb"))
+	if (0 == fopen_s(&file, p.asm_path, "wb"))
 	{
-		dump_asm(file, asm_out);
+		gen_asm(file, asm_in);
 		fclose(file);
 	}
 
@@ -187,7 +205,7 @@ int main(int argc, char** argv)
 	int clang_error = 0;
 	{
 		char clang_buffer[1024];
-		sprintf_s(clang_buffer, "clang %s -o%.*s", filename_buffer, (p.name_end - p.original), p.original);
+		sprintf_s(clang_buffer, "clang %s -o%s", p.asm_path, p.exe_path);
 		//printf("FILENAME:[%s]\n", clang_buffer);
 		clang_timer.start();
 		clang_error = system(clang_buffer);
@@ -207,5 +225,7 @@ int main(int argc, char** argv)
 		clang_timer.milliseconds());
 	fclose(timer_log);
 
+	if(clang_error)
+		debug_break();
 	return clang_error;
 }
