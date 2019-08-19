@@ -1,14 +1,17 @@
 #include "lex.h"
 #include "ast.h"
 #include "gen.h"
+#include "dir.h"
 #include "timer.h"
 #include "debug.h"
 
 #include "string.h"
 #include "stdio.h"
 
-bool read_file_into_lex_input(LexInput* lex_in)
+bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 {
+	lex_in->filename = filename;
+
 	FILE* file;
 	if (0 != fopen_s(&file, lex_in->filename, "rb"))
 	{
@@ -82,9 +85,58 @@ void path_init(path* p, const char* filename)
 	sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
 	sprintf_s(p->exe_path, "%.*s.exe", name_no_path_len, p->original);
 }
+void lex_directory(const char* directory)
+{
+	DirectoryIter* dir = dopen(directory);
+	if (!dir) return;
+
+	bool success = true;
+
+	do
+	{
+		if (disdir(dir))
+			continue;
+
+		const char* file_path = dfpath(dir);
+
+		LexInput lexin;
+		if (!read_file_into_lex_input(file_path, &lexin))
+		{
+			printf("failed to read file %s\n", file_path);
+			success = false;
+			continue;
+		}
+
+		LexOutput lexout;
+		if (!lex(lexin, lexout))
+		{
+			draw_error_caret_at(stdout, lexin, lexout.failure_location, lexout.failure_reason);
+			success = false;
+		}
+
+	} while (dnext(dir));
+
+	if(success)
+		printf("LEX[%s]: OK\n", directory);
+}
 
 int main(int argc, char** argv)
 {
+	Timer lex_timer;
+	lex_timer.start();
+
+	lex_directory("./stage_1/invalid/"); // note that most of the 'invalid' .c files are invalid due to AST issues, not lexing issues.
+	lex_directory("./stage_1/valid/");
+	lex_directory("./stage_2/invalid/");
+	lex_directory("./stage_2/valid/");
+	lex_directory("./stage_3/invalid/");
+	lex_directory("./stage_3/valid/");
+	lex_directory("./stage_4/invalid/");
+	lex_directory("./stage_4/valid/");
+
+	lex_timer.end();
+	printf("Lex Tests took %.2fms\n", lex_timer.milliseconds());
+
 	Timer main_timer;
 	Timer clang_timer;
 	main_timer.start();
@@ -108,8 +160,7 @@ int main(int argc, char** argv)
 
 	if (argc > 1)
 	{
-		lex_in.filename = argv[1];
-		if (!read_file_into_lex_input(&lex_in))
+		if (!read_file_into_lex_input(argv[1], &lex_in))
 		{
 			return 1;
 		}
@@ -118,7 +169,7 @@ int main(int argc, char** argv)
 	path p;
 	path_init(&p, lex_in.filename);
 
-	LexOutput lex_out = {};
+	LexOutput lex_out;
 	if (!lex(lex_in, lex_out))
 	{
 		fprintf(stdout, "lex failure: %s\n", lex_out.failure_reason);

@@ -1,4 +1,5 @@
 #include "lex.h"
+#include "debug.h"
 
 bool is_letter_or_underscore(char c)
 {
@@ -38,11 +39,56 @@ bool lex(const LexInput& input, LexOutput& output)
 			return false;
 		}
 
+		// handle two-char syntax: &&, ||, ==, !=, <=, >=
+		if (stream + 1 < end_stream)
+		{
+			if (stream[0] == '&' && stream[1] == '&')
+			{
+				output.tokens.push_back(Token(eToken::logical_and, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+			if (stream[0] == '|' && stream[1] == '|')
+			{
+				output.tokens.push_back(Token(eToken::logical_or, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+			if (stream[0] == '=' && stream[1] == '=')
+			{
+				output.tokens.push_back(Token(eToken::logical_equal, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+			if (stream[0] == '!' && stream[1] == '=')
+			{
+				output.tokens.push_back(Token(eToken::logical_not_equal, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+			if (stream[0] == '<' && stream[1] == '=')
+			{
+				output.tokens.push_back(Token(eToken::less_than_or_equal, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+			if (stream[0] == '>' && stream[1] == '=')
+			{
+				output.tokens.push_back(Token(eToken::greater_than_or_equal, stream, stream + 2));
+				stream += 2;
+				continue;
+			}
+		}
+
 		// handle one-char syntax: (){};
 		switch (*stream)
 		{
 		case '!':
-			output.tokens.push_back(Token(eToken::bang, stream, stream+1));
+			output.tokens.push_back(Token(eToken::logical_not, stream, stream+1));
+			++stream;
+			continue;
+		case '&':
+			output.tokens.push_back(Token(eToken::bitwise_and, stream, stream + 1));
 			++stream;
 			continue;
 		case '(':
@@ -73,8 +119,24 @@ bool lex(const LexInput& input, LexOutput& output)
 			output.tokens.push_back(Token(eToken::semicolon, stream, stream + 1));
 			++stream;
 			continue;
+		case '<':
+			output.tokens.push_back(Token(eToken::less_than, stream, stream + 1));
+			++stream;
+			continue;
+		case '=':
+			output.tokens.push_back(Token(eToken::assignment, stream, stream + 1));
+			++stream;
+			continue;
+		case '>':
+			output.tokens.push_back(Token(eToken::greater_than, stream, stream + 1));
+			++stream;
+			continue;
 		case '{':
 			output.tokens.push_back(Token(eToken::open_curly, stream, stream + 1));
+			++stream;
+			continue;
+		case '|':
+			output.tokens.push_back(Token(eToken::logical_or, stream, stream + 1));
 			++stream;
 			continue;
 		case '}':
@@ -82,7 +144,7 @@ bool lex(const LexInput& input, LexOutput& output)
 			++stream;
 			continue;
 		case '~':
-			output.tokens.push_back(Token(eToken::tilde, stream, stream + 1));
+			output.tokens.push_back(Token(eToken::bitwise_not, stream, stream + 1));
 			++stream;
 			continue;
 		}
@@ -129,6 +191,7 @@ bool lex(const LexInput& input, LexOutput& output)
 
 		output.failure_location = stream;
 		output.failure_reason = "[lex] unsupported data in input";
+		debug_break();
 		return false;
 	}
 

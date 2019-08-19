@@ -402,6 +402,54 @@ void append_error(std::vector<ASTError>& errors, const Token* token, const char*
 	debug_break();
 }
 
+void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason)
+{
+	const char* const file_start = lex.stream;
+	const char* const file_end = lex.stream + lex.length;
+
+	// line_num & line_start
+	uint64_t line_num = 0;
+	const char* line_start = file_start;
+	const char* line_end = file_end;
+	while (line_start < error_location)
+	{
+		++line_num;
+		const char* new_line_start = line_start;
+		while (new_line_start < file_end && *new_line_start != '\n')
+			++new_line_start;
+		if (new_line_start < file_end) // we must be at '\n', skip it
+			++new_line_start;
+		if (new_line_start < error_location)
+		{
+			line_start = new_line_start;
+			continue;
+		}
+
+		line_end = new_line_start - 2;
+		break;
+	}
+
+	uint64_t char_num = uint64_t(error_location - line_start);
+
+	fprintf(out, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
+		lex.filename,
+		line_num,
+		char_num,
+		error_reason);
+	fprintf(out, "%.*s\n",
+		int(line_end - line_start),
+		line_start);
+
+	while (char_num)
+	{
+		fputc(' ', out);
+		--char_num;
+	}
+
+	fputc('^', out);
+	fputc('\n', out);
+}
+
 void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex)
 {
 	fprintf(file, "\nBEGIN ERRORS=====\n");

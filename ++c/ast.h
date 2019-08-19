@@ -40,3 +40,4 @@ struct ASTNode
 ASTNode* ast(TokenStream& tokens, std::vector<ASTError>& errors);
 void dump_ast(FILE* file, const ASTNode& self, int spaces_indent);
 void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex);
+void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason);

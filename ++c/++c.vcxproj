@@ -115,6 +115,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="dir.cpp" />
     <ClCompile Include="gen.cpp" />
     <ClCompile Include="ast.cpp" />
     <ClCompile Include="lex.cpp" />
@@ -123,6 +124,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="debug.h" />
+    <ClInclude Include="dir.h" />
     <ClInclude Include="gen.h" />
     <ClInclude Include="ast.h" />
     <ClInclude Include="lex.h" />

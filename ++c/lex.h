@@ -11,19 +11,31 @@ enum eToken : uint8_t
 	identifier = 0,
 	constant_number = 1,
 
-	bang			= '!',//ASCII 33
+	logical_not		= '!',//ASCII 33
+	bitwise_and		= '&',//38
 	open_parens		= '(',//40
 	closed_parens	= ')',//41
-	star			= '*',//42
-	plus			= '+',//43
-	dash			= '-',//45
+	star			= '*',//42 - could be multiply, pointer decl, pointer deref
+	plus			= '+',//43 - could be sign decl or binary add
+	dash			= '-',//45 - could be sign decl or binary sub
 	forward_slash	= '/',//47
 	semicolon		= ';',//59
+	less_than		= '<',//60
+	assignment		= '=',//61
+	greater_than	= '>',//62
 	open_curly		= '{',//123
+	bitwise_or		= '|',//124
 	closed_curly	= '}',//125
-	tilde			= '~',//126
+	bitwise_not		= '~',//126
 
-	keyword_int = 128,
+	logical_and = 127,		// &&
+	logical_or,				// ||
+	logical_equal,			// ==
+	logical_not_equal,		// !=
+	less_than_or_equal,		// <=
+	greater_than_or_equal,	// >=
+
+	keyword_int,
 	keyword_return,
 };
 

@@ -1,27 +1,36 @@
-# I'm trying my hand at making a compiler!
-See "++c" folder. - Chad Bramwell
+# [PRACTICE] Write a C Compiler and then try changing the language for the better.
+See "++c" folder for my compiler, I'm
+following: [Nora Sandler's Writing a C Compiler](https://norasandler.com/2017/11/29/Write-a-Compiler.html)
 
 Stages to my compiler: *lex* -> *ast* -> *gen*
 
-## Timeline
+*gen* generates assembly (.s file) and clang converts that to binary. Eventually I'll add *bin* so I can skip clang directly.
 
-* 8/5/2019 - STAGE 1 TESTS PASS! 
-    * Took me ~3 days to get here: 1day for lex, 1day for ast, 1day for gen
-    * Note that "day" is generous. More like a few hours each night.
-* 8/7/2019 - STAGE 2 TESTS PASS! 
-    * Took me a few hours to go from STAGE 1 to STAGE 2.
-* 8/10/2019 - STAGE 3 ___INPROGRESS___
-    * Lexing +/* took just a few minutes
-    * Spent the rest of a few hours writing errors for AST stage
-    * Spent a few minutes combining all virtual ASTNodes into a single node in prep for binary_ops (deleted a bunch of code!)
+Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint), *dir* (for getting file names in a directory)
+
+**Never stop learning!** - Chad (@chad_bramwell)
 
 ## Random Thoughts:
 * Lexing is compression.
 * AST is pattern matching.
 
-## TODO
-* "stringpool" for identifier allocations.
-* Remove depedency on clang and generate a binary directly from AST.
+## Timeline
+
+* 8/5/2019 - **STAGE 1 TESTS PASS!** 
+    * Took me ~3 days to get here: 1day for lex, 1day for ast, 1day for gen
+    * Note that "day" is generous. More like a few hours each night.
+* 8/7/2019 - **STAGE 2 TESTS PASS!**
+    * Took me a few hours to go from STAGE 1 to STAGE 2.
+* 8/10/2019 - STAGE 3 ~~_INPROGRESS_~~
+    * Lexing +/* took just a few minutes
+    * Spent the rest of a few hours writing errors for AST stage
+    * Spent a few minutes combining all virtual ASTNodes into a single node in prep for binary_ops (deleted a bunch of code!)
+* 8/15/2019 - **STAGE 3 TESTS PASS!**
+    * Life, newborn, etc... I think to go from 8/10 to here was only about a day of work.
+    * So 2 days int total for STAGE 3.
+    * Binary Op stuff as part of the AST was the most confusing. And I'm disheartened to say that I simply followed the ruleset instead of trying to really understand it.
+* 8/19/2019 - STAGE 4 ___INPROGRESS___
+    * I've spent 2? days adding the ability to quickly test all files in a directory so I don't have to rely on the test_compiler.sh script. This provides me with the ability to immediately break on an error. Took so long due to hemming and hawing on "best" way to do it which later turned into "just do one of them because or none of them because you aren't working on the compiler which is what you really want to do."
 
 ## Useful links:
 * http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/
