@@ -24,8 +24,7 @@ struct ASTNode
 	bool is_number;
 	bool is_unary_op;
 	bool is_binary_op;
-	eToken unary_op;
-	eToken binary_op;
+	eToken op;
 
 	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
 

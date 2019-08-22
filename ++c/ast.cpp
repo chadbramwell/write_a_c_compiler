@@ -13,6 +13,10 @@
 ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
+ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors);
 
@@ -141,27 +145,260 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-	// <exp> :: = <term>{ ("+" | "-") < term > }
+	// <exp> ::= <logical-and-exp> { "||" <logical-and-exp> }
 
 	TokenStream tokens = io_tokens;
-	ASTNode* term = parse_term(tokens, errors);
+	ASTNode* term = parse_logical_and_expression(tokens, errors);
 
 	if(!term)
+		return NULL;
+
+	if (tokens.next->type != eToken::logical_or)
+	{
+		io_tokens = tokens;
+		return term;
+	}
+
+	ASTNode op;
+	op.is_binary_op = true;
+
+	for(;;)
+	{
+		op.op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected term after || but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* term2 = parse_logical_and_expression(tokens, errors);
+		if (!term2)
+		{
+			append_error(errors, tokens.next, "expected term after ||");
+			return NULL;
+		}
+
+		op.children.push_back(term);
+		op.children.push_back(term2);
+
+		// Gross, but it works. We will wrap around, set our binary_op to next token type and
+		// use previous binop as term for next binop
+		if (tokens.next != tokens.end && (tokens.next->type == eToken::logical_or))
+		{
+			term = new ASTNode(op);
+			op.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(op);
+}
+
+ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <logical-and-exp> ::= <equality-exp> { "&&" <equality-exp> }
+
+	TokenStream tokens = io_tokens;
+	ASTNode* left_node = parse_equality_expression(tokens, errors);
+
+	if (!left_node)
+		return NULL;
+
+	if (tokens.next->type != eToken::logical_and)
+	{
+		io_tokens = tokens;
+		return left_node;
+	}
+
+	ASTNode op;
+	op.is_binary_op = true;
+
+	for (;;)
+	{
+		op.op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected additive expression after && but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* right_node = parse_equality_expression(tokens, errors);
+		if (!right_node)
+		{
+			append_error(errors, tokens.next, "expected additive expression after &&");
+			return NULL;
+		}
+
+		op.children.push_back(left_node);
+		op.children.push_back(right_node);
+
+		if (tokens.next != tokens.end &&
+			(tokens.next->type == eToken::logical_and))
+		{
+			left_node = new ASTNode(op);
+			op.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(op);
+}
+
+ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <equality-exp> ::= <relational-exp> { ("!=" | "==") <relational-exp> }
+
+	TokenStream tokens = io_tokens;
+	ASTNode* left_node = parse_relational_expression(tokens, errors);
+
+	if (!left_node)
+		return NULL;
+
+	if (tokens.next->type != eToken::logical_not_equal &&
+		tokens.next->type != eToken::logical_equal)
+	{
+		io_tokens = tokens;
+		return left_node;
+	}
+
+	ASTNode op;
+	op.is_binary_op = true;
+
+	for (;;)
+	{
+		op.op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected additive expression after != or == but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* right_node = parse_relational_expression(tokens, errors);
+		if (!right_node)
+		{
+			append_error(errors, tokens.next, "expected additive expression after != or ==");
+			return NULL;
+		}
+
+		op.children.push_back(left_node);
+		op.children.push_back(right_node);
+
+		// Gross, but it works. We will wrap around, set our binary_op to next token type and
+		// use previous binop as term for next binop
+		if (tokens.next != tokens.end &&
+			(tokens.next->type == eToken::logical_not_equal ||
+				tokens.next->type == eToken::logical_equal))
+		{
+			left_node = new ASTNode(op);
+			op.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(op);
+}
+
+ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <relational-exp> ::= <additive-exp> { ("<" | ">" | "<=" | ">=") <additive-exp> }
+
+	TokenStream tokens = io_tokens;
+	ASTNode* left_node = parse_additive_expression(tokens, errors);
+
+	if (!left_node)
+		return NULL;
+
+	if (tokens.next->type != '<' &&
+		tokens.next->type != '>' &&
+		tokens.next->type != eToken::less_than_or_equal &&
+		tokens.next->type != eToken::greater_than_or_equal)
+	{
+		io_tokens = tokens;
+		return left_node;
+	}
+
+	ASTNode op;
+	op.is_binary_op = true;
+
+	for (;;)
+	{
+		op.op = tokens.next->type;
+
+		++tokens.next;
+		if (tokens.next == tokens.end)
+		{
+			append_error(errors, tokens.next, "expected additive expression after <, >, <=, or >= but no more tokens");
+			return NULL;
+		}
+
+		ASTNode* right_node = parse_additive_expression(tokens, errors);
+		if (!right_node)
+		{
+			append_error(errors, tokens.next, "expected additive expression after <, >, <=, or >=");
+			return NULL;
+		}
+
+		op.children.push_back(left_node);
+		op.children.push_back(right_node);
+
+		// Gross, but it works. We will wrap around, set our binary_op to next token type and
+		// use previous binop as term for next binop
+		if (tokens.next != tokens.end && 
+			(tokens.next->type == '<' || 
+				tokens.next->type == '>' || 
+				tokens.next->type == eToken::less_than_or_equal ||
+				tokens.next->type == eToken::greater_than_or_equal))
+		{
+			left_node = new ASTNode(op);
+			op.children.clear();
+			continue;
+		}
+
+		break;
+	}
+
+	io_tokens = tokens;
+	return new ASTNode(op);
+}
+
+ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <additive-exp> ::= <term> { ("+" | "-") <term> }
+
+	TokenStream tokens = io_tokens;
+	ASTNode* left_node = parse_term(tokens, errors);
+
+	if (!left_node)
 		return NULL;
 
 	if (tokens.next->type != '+' &&
 		tokens.next->type != '-')
 	{
 		io_tokens = tokens;
-		return term;
+		return left_node;
 	}
 
-	ASTNode binop;
-	binop.is_binary_op = true;
+	ASTNode op;
+	op.is_binary_op = true;
 
-	for(;;)
+	for (;;)
 	{
-		binop.binary_op = tokens.next->type;
+		op.op = tokens.next->type;
 
 		++tokens.next;
 		if (tokens.next == tokens.end)
@@ -170,22 +407,22 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 			return NULL;
 		}
 
-		ASTNode* term2 = parse_term(tokens, errors);
-		if (!term2)
+		ASTNode* right_node = parse_term(tokens, errors);
+		if (!right_node)
 		{
 			append_error(errors, tokens.next, "expected term after + or -");
 			return NULL;
 		}
 
-		binop.children.push_back(term);
-		binop.children.push_back(term2);
+		op.children.push_back(left_node);
+		op.children.push_back(right_node);
 
 		// Gross, but it works. We will wrap around, set our binary_op to next token type and
 		// use previous binop as term for next binop
 		if (tokens.next != tokens.end && (tokens.next->type == '-' || tokens.next->type == '+'))
 		{
-			term = new ASTNode(binop);
-			binop.children.clear();
+			left_node = new ASTNode(op);
+			op.children.clear();
 			continue;
 		}
 
@@ -193,7 +430,7 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	}
 
 	io_tokens = tokens;
-	return new ASTNode(binop);
+	return new ASTNode(op);
 }
 
 ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
@@ -202,23 +439,23 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 	TokenStream tokens = io_tokens;
 
-	ASTNode* factor = parse_factor(tokens, errors);
-	if(!factor)
+	ASTNode* left_node = parse_factor(tokens, errors);
+	if(!left_node)
 		return NULL;
 
 	if (tokens.next->type != '*' &&
 		tokens.next->type != '/')
 	{
 		io_tokens = tokens;
-		return factor;
+		return left_node;
 	}
 
-	ASTNode binop;
-	binop.is_binary_op = true;
+	ASTNode op;
+	op.is_binary_op = true;
 
 	for (;;)
 	{
-		binop.binary_op = tokens.next->type;
+		op.op = tokens.next->type;
 
 		++tokens.next;
 		if (tokens.next == tokens.end)
@@ -227,22 +464,22 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
 			return NULL;
 		}
 
-		ASTNode* factor2 = parse_factor(tokens, errors);
-		if (!factor2)
+		ASTNode* right_node = parse_factor(tokens, errors);
+		if (!right_node)
 		{
 			append_error(errors, tokens.next, "expected factor after * or /");
 			return NULL;
 		}
 
-		binop.children.push_back(factor);
-		binop.children.push_back(factor2);
+		op.children.push_back(left_node);
+		op.children.push_back(right_node);
 
 		// Gross, but it works. We will wrap around, set our binary_op to next token type and
 		// use previous binop as term for next binop
 		if (tokens.next != tokens.end && (tokens.next->type == '*' || tokens.next->type == '/'))
 		{
-			factor = new ASTNode(binop);
-			binop.children.clear();
+			left_node = new ASTNode(op);
+			op.children.clear();
 			continue;
 		}
 
@@ -250,7 +487,7 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	}
 
 	io_tokens = tokens;
-	return new ASTNode(binop);
+	return new ASTNode(op);
 }
 
 ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
@@ -292,7 +529,7 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
 		// unary operator, expects factor
 		ASTNode n;
 		n.is_unary_op = true;
-		n.unary_op = io_tokens.next->type;
+		n.op = io_tokens.next->type;
 
 		TokenStream tokens = io_tokens;
 		++tokens.next;
@@ -363,7 +600,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fprintf(file, "program\n");
 	else if (self.is_unary_op)
 	{
-		fprintf(file, "UnOp(%c, ", self.unary_op);
+		fprintf(file, "UnOp(%c, ", self.op);
 		for (size_t i = 0; i < self.children.size(); ++i)
 		{
 			dump_ast(file, *self.children[i], 0);
@@ -373,13 +610,30 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	}
 	else if (self.is_binary_op)
 	{
-		fprintf(file, "BinOp(%c, ", self.binary_op);
-		for (size_t i = 0; i < self.children.size(); ++i)
+		assert(self.children.size() == 2);
+		fprintf(file, "BinOp(");
+		switch (self.op)
 		{
-			dump_ast(file, *self.children[i], 0);
-			if (i + 1 < self.children.size())
-				fprintf(file, ", ");
+		case '*': fputc(self.op, file); break;
+		case '+': fputc(self.op, file); break;
+		case '-': fputc(self.op, file); break;
+		case '/': fputc(self.op, file); break;
+		case '<': fputc(self.op, file); break;
+		case '>': fputc(self.op, file); break;
+		case eToken::logical_and: fprintf(file, "&&"); break;
+		case eToken::logical_or: fprintf(file, "||"); break;
+		case eToken::logical_equal: fprintf(file, "=="); break;
+		case eToken::logical_not_equal: fprintf(file, "!="); break;
+		case eToken::less_than_or_equal: fprintf(file, "<="); break;
+		case eToken::greater_than_or_equal: fprintf(file, ">="); break;
+		default:
+			debug_break();
+			fprintf(file, "???");
 		}
+		fprintf(file, ", ");
+		dump_ast(file, *self.children[0], 0);
+		fprintf(file, ", ");
+		dump_ast(file, *self.children[1], 0);
 		fputc(')', file);
 		return;
 	}
@@ -390,6 +644,9 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	{
 		dump_ast(file, *self.children[i], spaces_indent + 2);
 	}
+
+	if (self.is_program)
+		fputc('\n', file);
 }
 
 void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason)

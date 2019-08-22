@@ -219,13 +219,23 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case '-': fputc(token.type, file); continue;
 		case '/': fputc(token.type, file); continue;
 		case ';': fputc(token.type, file); continue;
+		case '<': fputc(token.type, file); continue;
+		case '>': fputc(token.type, file); continue;
 		case '{': fputc(token.type, file); continue;
 		case '}': fputc(token.type, file); continue;
 		case '~': fputc(token.type, file); continue;
+		case eToken::logical_and: fprintf(file, "&&"); continue;
+		case eToken::logical_or: fprintf(file, "||"); continue;
+		case eToken::logical_equal: fprintf(file, "=="); continue;
+		case eToken::logical_not_equal: fprintf(file, "!="); continue;
+		case eToken::less_than_or_equal: fprintf(file, "<="); continue;
+		case eToken::greater_than_or_equal: fprintf(file, ">="); continue;
 		case eToken::keyword_int: fprintf(file, "int "); continue;
 		case eToken::keyword_return: fprintf(file, "return "); continue;
 		}
 		
+		debug_break();
 		break;// detected token we don't know how to handle
 	}
+	fputc('\n', file);
 }
