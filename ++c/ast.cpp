@@ -595,7 +595,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	else if (self.is_return)
 		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
 	else if (self.is_number)
-		fprintf(file, "Int<%" PRIu64 ">", self.number);
+		fprintf(file, "Int<%" PRIi64 ">", self.number);
 	else if (self.is_program)
 		fprintf(file, "program\n");
 	else if (self.is_unary_op)
@@ -688,7 +688,7 @@ void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_locat
 
 	uint64_t char_num = uint64_t(error_location - line_start);
 
-	fprintf(out, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
+	fprintf(out, "%s:%" PRIi64 ":%" PRIi64 ": error: %s\n",
 		lex.filename,
 		line_num,
 		char_num,
@@ -743,7 +743,7 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
 
 		uint64_t char_num = uint64_t(error_location - line_start);
 
-		fprintf(file, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
+		fprintf(file, "%s:%" PRIi64 ":%" PRIi64 ": error: %s\n",
 			lex.filename,
 			line_num,
 			char_num,

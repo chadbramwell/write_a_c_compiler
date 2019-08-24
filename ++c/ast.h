@@ -24,14 +24,13 @@ struct ASTNode
 	bool is_number;
 	bool is_unary_op;
 	bool is_binary_op;
+
 	eToken op;
+	std::string func_name;
+	int64_t number;
 
 	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
 
-	std::string func_name;
-
-	uint64_t number;
-	
 	// HACK. I really wish C/C++ zero-initialized by default, it would save so much programmer time.
 	ASTNode() { memset(this, 0, sizeof(ASTNode)); children = std::vector<ASTNode*>(); func_name = std::string(); }
 };

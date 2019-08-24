@@ -5,7 +5,7 @@ bool gen_asm_node(FILE* file, const ASTNode* n)
 {
 	if (n->is_number)
 	{
-		fprintf(file, "  mov $%" PRIu64 ", %%rax\n", n->number);
+		fprintf(file, "  mov $%" PRIi64 ", %%rax\n", n->number);
 		return true;
 	}
 	

@@ -1,6 +1,7 @@
 #include "lex.h"
 #include "ast.h"
 #include "gen.h"
+#include "simplify.h"
 #include "dir.h"
 #include "timer.h"
 #include "debug.h"
@@ -345,11 +346,91 @@ void init_lex_to_ret2(LexInput& lex_in)
 	lex_in.length = strlen(lex_in.stream);
 }
 
+void test_simplify(const LexInput& lexin)
+{
+	LexOutput lexout;
+	if (!lex(lexin, lexout))
+		return;
+
+	TokenStream tokens;
+	tokens.next = lexout.tokens.data();
+	tokens.end = tokens.next + lexout.tokens.size();
+
+	std::vector<ASTError> errors;
+	ASTNode* original = ast(tokens, errors);
+	if (!original)
+		return;
+
+	printf("=== Attempting Simplification of AST: ===\n");
+	dump_ast(stdout, *original, 0);
+
+	ASTNode* simple = original;
+	int reductions = 0;
+	while (true)
+	{
+		int prev_reductions = reductions;
+		simple = simplify(simple, &reductions);
+		assert(simple);
+
+		if (prev_reductions == reductions)
+			break;
+
+		printf("=== SIMPLIFICATION FOUND! ===\n");
+		dump_ast(stdout, *simple, 0);
+	}
+
+	printf("=== SIMPLIFICATIONS ATTEMPT COMPLETE, TOTAL REDUCTIONS: %d ===\n", reductions);
+	printf("BEFORE: "); dump_lex(stdout, lexout);
+	printf(" AFTER: ");  dump_simplify(stdout, simple);
+}
+
+void test_simplify_double_negative()
+{
+	LexInput lexin;
+	lexin.filename = "ret--1";
+	lexin.stream =
+		"int main() {\n"
+		"	return -(-1);\n"
+		"}\n";
+	lexin.length = strlen(lexin.stream);
+
+	test_simplify(lexin);
+}
+
+void test_simplify_1_plus_2()
+{
+	LexInput lexin;
+	lexin.filename = "ret1+2";
+	lexin.stream =
+		"int main() {\n"
+		"	return 1+2;\n"
+		"}\n";
+	lexin.length = strlen(lexin.stream);
+
+	test_simplify(lexin);
+}
+
+void test_simplify_dn_and_1p2()
+{
+	LexInput lexin;
+	lexin.filename = "ret--1+-2";
+	lexin.stream =
+		"int main() {\n"
+		"	return -(-1+-2);\n"
+		"}\n";
+	lexin.length = strlen(lexin.stream);
+
+	test_simplify(lexin);
+}
+
 int main(int argc, char** argv)
 {
-	test_lexing();
-	test_ast();
-	test_gen();
+	//test_lexing();
+	//test_ast();
+	//test_gen();
+	test_simplify_double_negative();
+	test_simplify_1_plus_2();
+	test_simplify_dn_and_1p2();
 
 	bool debug_print = false;
 	bool debug_print_to_disk = false;

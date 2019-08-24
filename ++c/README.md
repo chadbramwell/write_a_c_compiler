@@ -1,0 +1,86 @@
+# zc
+(pronounced zee-cee or zero-c) - a programming-language/thought-experiment on how to simplify C and empower developers.
+
+I like C a lot. It's C89 was reasonably simple but still had rough edges. I'd like to see how far I can push the language by removing things. It's easy to add, hard to remove.
+
+However, there will be new things or more so, better defaults. I'll be modifying/changing/adding as necessary to remove UB (undefined behavior) and IDB (implementation defined behavior). For example, there's a massive number of ramifications through C due to the unknown size of char. char will be defined to 8 bits as is standard on all modern processors. Another area that will need changes are easy gotchas for programmers, the predominant one being to forget to initialize variables.
+
+# language pillars
+* Zero undefined behavior
+* Zero implementation-defined behavior
+* Default is to initialize to zero
+* Every engineer shouldn't have to spend a lifetime learning new things about their langauge in order to work effectively
+
+# language challenges
+C is a good starting point but it has ~200 undefined behaviors and ~150 implementation-defined behaviors. I have no doubt there are very good reasons for all of that but I don't know what they are. So this will be a path of learning and discovery.
+
+# language hope
+* Fewer keywords than C
+* Remove allowance of missing return (confusing)
+* Remove forward-decl requirement. (Broken, ex: can't forward-decl FILE)
+
+# half-baked ideas
+* Simpler syntax for data types. Instead of char/int/uint64_t it's i8/i32/u64 and beyond: users can define arbitrary bit size of their variables effectively combining two different pieces of C syntax into one. Bit manipulation code will be automatically generated for you.
+* I'd love to get rid of header files but a good first step is to eliminate the requirement for forward-declaration. What's the point?
+* "Debug builds are too slow" is total garbage. Engineers need to learn how to write better code. Compilers have a very large oppurtunity to actual improve the quality of engineers here. If a compiler could regurgatate the code it compiled but with very obvious and easy optimizations then an engineer could diff their source files against these to learn how to improve. The difference between debug and release builds could finally be focused on optimizations that would be too tedious for engineers to write.
+* Compilers should have the freedom to reorder data as needed for optimizations. However, compliers also need to support better (compile-time) reflection systems for serialization.
+
+(reference: http://www.iso-9899.info/wiki/The_Standard)
+
+# C keywords and some thoughts
+* ~~auto~~ 
+  * Can be ignored by compiler and thus is unhelpful. (see register below) [6.7.2:123](https://web.archive.org/web/20181230041359if_/http://www.open-std.org/jtc1/sc22/wg14/www/abq/c17_updated_proposed_fdis.pdf) "The implementation may treat any **register** declaration simply as an **auto** declaration."
+* break
+* case
+* char
+  * char can be signed or unsigned depending on compiler settings (*facepalm*)
+  * undefined size, should be defined to 8bits
+* const
+* continue
+* default
+* do
+* double
+* else
+* enum
+* ~~extern~~
+  * needs more thought about API description through external linkage mechanisms
+* float
+* for
+* goto
+* if
+* ~~inline~~ 
+  * doesn't do anything in C, "hint" to compiler
+* int
+* long
+* ~~register~~
+  * Can be ignored by compiler and thus is unhelpful. [6.7.1.6](https://web.archive.org/web/20181230041359if_/http://www.open-std.org/jtc1/sc22/wg14/www/abq/c17_updated_proposed_fdis.pdf) "A declaration of an identifier for an object with storage-class specifier **register** suggests that
+access to the object be as fast as possible. The extent to which such suggestions are effective is
+implementation-defined."
+* restrict
+* return
+* short
+* ~~signed~~
+  * come on, default to one or the other, don't add new keywords for both ways.
+* sizeof
+* static
+* struct
+* switch
+* typedef
+* union
+* unsigned
+* ~~void~~
+  * why type something that's meaningless?
+* ~~volatile~~
+  * A compiler *could* use this keyword to disable optimizations around a variable but a compiler *may* also choose to ignore the qualifier entirely. It's undependable and not cross-compiler.
+* while
+* _Alignas
+* _Alignof
+* _Atomic
+* ~~_Bool~~ 
+  * bool. bit. just something. come-on, you gotta be willing to break things sometimes to make everything better.
+* ~~_Complex~~ *how did this get added to the standard? I mean, honestly.*
+* ~~_Generic~~ *wtf is this?*
+* ~~_Imaginary~~ *same question as _Complex, why?*
+* ~~_Noreturn~~ *why???*
+* _Static_assert
+* _Thread_local
