@@ -11,6 +11,21 @@ However, there will be new things or more so, better defaults. I'll be modifying
 * Default is to initialize to zero
 * Every engineer shouldn't have to spend a lifetime learning new things about their langauge in order to work effectively
 
+# ++c supported simplify rules
+These include anything wrapped in nested parenthesis because those wash out when going from tokens to AST.
+* unary(-)[number] -> number (aka token reduction, makes further reductions more obvious)
+* binary(+)[number,number] -> number (do the addition for the user)
+
+# ++c supported simplify rules I'm looking forward to implementing
+* variable hoisting (moving a variable that's only read in a loop outside of the scope of the loop - this is a big reason why debug builds are slower than release builds)
+* it'd be difficult but I'd love some system that could [Finish Your Derivations](https://fgiesen.wordpress.com/2010/10/21/finish-your-derivations-please/)
+
+# ++c simplify algorithm
+* for full AST, try to pattern match a simplify rule
+  * write match found, store reduction location and value
+* if no more matches found, done, otherwise repeat
+* TODO: write out code based on original source (using token location) instead of writing out based on ASTNodes, double-check redundant/useless parens are removed
+
 # language challenges
 C is a good starting point but it has ~200 undefined behaviors and ~150 implementation-defined behaviors. I have no doubt there are very good reasons for all of that but I don't know what they are. So this will be a path of learning and discovery.
 

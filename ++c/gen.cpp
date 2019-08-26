@@ -1,11 +1,17 @@
 #include "gen.h"
 #include "debug.h"
 
-bool gen_asm_node(FILE* file, const ASTNode* n)
+struct gen_ctx
+{
+	FILE* out;
+	uint64_t label_index;
+};
+
+bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
 	if (n->is_number)
 	{
-		fprintf(file, "  mov $%" PRIi64 ", %%rax\n", n->number);
+		fprintf(ctx->out, "  mov $%" PRIi64 ", %%rax\n", n->number);
 		return true;
 	}
 	
@@ -13,21 +19,21 @@ bool gen_asm_node(FILE* file, const ASTNode* n)
 	{
 		for (size_t i = 0; i < n->children.size(); ++i)
 		{
-			if (!gen_asm_node(file, n->children[i]))
+			if (!gen_asm_node(ctx, n->children[i]))
 				return false;
 		}
 
 		switch (n->op)
 		{
-		case '-': fprintf(file, "  neg %%rax\n"); return true;
-		case '~': fprintf(file, "  not %%rax\n"); return true;
+		case '-': fprintf(ctx->out, "  neg %%rax\n"); return true;
+		case '~': fprintf(ctx->out, "  not %%rax\n"); return true;
 		}
 
 		if (n->op == '!')
 		{
-			fprintf(file, "  cmp $0, %%rax\n");	// set ZF on if exp == 0, set it off otherwise
-			fprintf(file, "  mov $0, %%rax\n"); // zero out EAX (doesn't change FLAGS), xor %eax %eax is better because it sets a flag we can't use it because we depend on the ZF flag on the next line
-			fprintf(file, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
+			fprintf(ctx->out, "  cmp $0, %%rax\n");	// set ZF on if exp == 0, set it off otherwise
+			fprintf(ctx->out, "  mov $0, %%rax\n"); // zero out EAX (doesn't change FLAGS), xor %eax %eax is better because it sets a flag we can't use it because we depend on the ZF flag on the next line
+			fprintf(ctx->out, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
 			return true;
 		}
 	}
@@ -39,36 +45,127 @@ bool gen_asm_node(FILE* file, const ASTNode* n)
 		{
 		case eToken::plus:
 		{
-			gen_asm_node(file, n->children[0]);
-			fprintf(file, "  push %%rax\n");
-			gen_asm_node(file, n->children[1]);
-			fprintf(file, "  pop %%rcx\n");
-			fprintf(file, "  add %%rcx, %%rax\n");
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  add %%rcx, %%rax\n");
 		} break;
 		case eToken::dash:
 		{
-			gen_asm_node(file, n->children[1]); // note swapped children. sub src, dst => dst - src => stored in dst
-			fprintf(file, "  push %%rax\n");
-			gen_asm_node(file, n->children[0]);
-			fprintf(file, "  pop %%rcx\n");
-			fprintf(file, "  sub %%rcx, %%rax\n");
+			gen_asm_node(ctx, n->children[1]); // note swapped children. sub src, dst => dst - src => stored in dst
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  sub %%rcx, %%rax\n");
 		} break;
 		case eToken::star:
 		{
-			gen_asm_node(file, n->children[0]);
-			fprintf(file, "  push %%rax\n");
-			gen_asm_node(file, n->children[1]);
-			fprintf(file, "  pop %%rcx\n");
-			fprintf(file, "  imul %%rcx, %%rax\n");
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  imul %%rcx, %%rax\n");
 		} break;
 		case eToken::forward_slash:
 		{
-			gen_asm_node(file, n->children[1]); // note swapped children.
-			fprintf(file, "  push %%rax\n");
-			gen_asm_node(file, n->children[0]);
-			fprintf(file, "  pop %%rcx\n");
-			fprintf(file, "  xor %%rdx, %%rdx\n"); //note dividend is combo of EDX:EAX. If we don't 0 out EDX we could get an integer overflow exception because RAX won't be big enough to store the result of the DIV
-			fprintf(file, "  idiv %%rcx\n"); // output stored in rax
+			gen_asm_node(ctx, n->children[1]); // note swapped children.
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  xor %%rdx, %%rdx\n"); //note dividend is combo of EDX:EAX. If we don't 0 out EDX we could get an integer overflow exception because RAX won't be big enough to store the result of the DIV
+			fprintf(ctx->out, "  idiv %%rcx\n"); // output stored in rax
+		} break;
+		case '<':
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  setl %%al\n");
+		} break;
+		case '>':
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  setg %%al\n");
+		} break;
+		case eToken::logical_and:
+		{
+			uint64_t label_index_rightside = ++ctx->label_index;
+			uint64_t label_index_end = ++ctx->label_index;
+
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  cmp $0, %%rax\n");
+			fprintf(ctx->out, "  jne check_right_of_and_%" PRIu64 "\n", label_index_rightside);
+			fprintf(ctx->out, "  jmp end_and_%" PRIu64 "\n", label_index_end);
+			fprintf(ctx->out, "check_right_of_and_%" PRIu64 ":\n", label_index_rightside);
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  cmp $0, %%rax\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  setne %%al\n");
+			fprintf(ctx->out, "end_and_%" PRIu64 ":\n", label_index_end);
+		} break;
+		case eToken::logical_or:
+		{
+			uint64_t label_index_rightside = ++ctx->label_index;
+			uint64_t label_index_end = ++ctx->label_index;
+
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  cmp $0, %%rax\n");
+			fprintf(ctx->out, "  je check_right_of_or_%" PRIu64 "\n", label_index_rightside);
+			fprintf(ctx->out, "  mov $1, %%rax\n");
+			fprintf(ctx->out, "  jmp end_or_%" PRIu64 "\n", label_index_end);
+			fprintf(ctx->out, "check_right_of_or_%" PRIu64 ":\n", label_index_rightside);
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  cmp $0, %%rax\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  setne %%al\n");
+			fprintf(ctx->out, "end_or_%" PRIu64 ":\n", label_index_end);
+		} break;
+		case eToken::logical_equal:
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  sete %%al\n");
+		} break;
+		case eToken::logical_not_equal:
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  setne %%al\n");
+		} break;
+		case eToken::less_than_or_equal:
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  setle %%al\n");
+		} break;
+		case eToken::greater_than_or_equal:
+		{
+			gen_asm_node(ctx, n->children[0]);
+			fprintf(ctx->out, "  push %%rax\n");
+			gen_asm_node(ctx, n->children[1]);
+			fprintf(ctx->out, "  pop %%rcx\n");
+			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+			fprintf(ctx->out, "  setge %%al\n");
 		} break;
 		default:
 			debug_break();
@@ -78,27 +175,28 @@ bool gen_asm_node(FILE* file, const ASTNode* n)
 		return true;
 	}
 
+	debug_break();
 	return false;
 }
 
-bool gen_asm_return(FILE* file, const ASTNode* r)
+bool gen_asm_return(gen_ctx* ctx, const ASTNode* r)
 {
 	for (size_t i = 0; i < r->children.size(); ++i)
 	{
-		if (!gen_asm_node(file, r->children[i]))
+		if (!gen_asm_node(ctx, r->children[i]))
 			return false;
 	}
-	fprintf(file, "  ret\n");
+	fprintf(ctx->out, "  ret\n");
 	return true;
 }
 
-bool gen_asm_func(FILE* file, const ASTNode* f)
+bool gen_asm_func(gen_ctx* ctx, const ASTNode* f)
 {
 	for (size_t i = 0; i < f->children.size(); ++i)
 	{
 		if (f->children[i]->is_return)
 		{
-			if (!gen_asm_return(file, f->children[i]))
+			if (!gen_asm_return(ctx, f->children[i]))
 				return false;
 		}
 	}
@@ -107,6 +205,10 @@ bool gen_asm_func(FILE* file, const ASTNode* f)
 
 bool gen_asm(FILE* file, const AsmInput& input)
 {
+	gen_ctx ctx;
+	ctx.out = file;
+	ctx.label_index = 0;
+
 	/*
 		.text
 		.def	 main;
@@ -136,8 +238,8 @@ bool gen_asm(FILE* file, const AsmInput& input)
 	if (!main)
 		return false;
 
-	fprintf(file, "  .globl %s\n", main->func_name.c_str());
-	fprintf(file, "%s:\n", main->func_name.c_str());
+	fprintf(ctx.out, "  .globl %s\n", main->func_name.c_str());
+	fprintf(ctx.out, "%s:\n", main->func_name.c_str());
 	//fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
-	return gen_asm_func(file, main);
+	return gen_asm_func(&ctx, main);
 }
