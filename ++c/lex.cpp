@@ -220,6 +220,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case '/': fputc(token.type, file); continue;
 		case ';': fputc(token.type, file); continue;
 		case '<': fputc(token.type, file); continue;
+		case '=': fputc(token.type, file); continue;
 		case '>': fputc(token.type, file); continue;
 		case '{': fputc(token.type, file); continue;
 		case '}': fputc(token.type, file); continue;

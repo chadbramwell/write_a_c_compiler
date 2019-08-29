@@ -8,8 +8,9 @@
 
 enum eToken : uint8_t
 {
-	identifier = 0,
-	constant_number = 1,
+	UNKNOWN = 0,
+	identifier = 1,
+	constant_number = 2,
 
 	logical_not		= '!',//ASCII 33
 	bitwise_and		= '&',//38

@@ -17,6 +17,7 @@ bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 	if (0 != fopen_s(&file, lex_in->filename, "rb"))
 	{
 		printf("failed to open file %s\n", lex_in->filename);
+		debug_break();
 		return false;
 	}
 
@@ -31,6 +32,7 @@ bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 	if (file_size != actually_read)
 	{
 		printf("failed to read file %s of size %" PRIu32 "\n", lex_in->filename, file_size);
+		debug_break();
 		free(memory);
 		return false;
 	}
@@ -440,12 +442,23 @@ int main(int argc, char** argv)
 	main_timer.start();
 
 	LexInput lex_in;
-	if (argc == 2)
+	if (argc >= 2)
 	{
 		if (!read_file_into_lex_input(argv[1], &lex_in))
 		{
 			// error reasons printed by function.
 			return 2;
+		}
+
+		if (argc == 3)
+		{
+			if (argv[2][0] == '-' &&
+				argv[2][1] == 'v' &&
+				argv[2][2] == 0)
+			{
+				debug_print = true;
+				debug_print_timers = true;
+			}
 		}
 	}
 	else
@@ -478,7 +491,7 @@ int main(int argc, char** argv)
 	{
 		fprintf(stdout, "==lex success!==[\n");
 		dump_lex(stdout, lex_out);
-		fprintf(stdout, "\n]\n");
+		fprintf(stdout, "]\n");
 
 		FILE* file;
 		if (debug_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
