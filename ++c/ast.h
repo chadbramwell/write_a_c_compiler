@@ -16,6 +16,13 @@ struct ASTError
 	const char* reason;
 };
 
+struct ASTVar
+{
+	// assumed type INT for now
+	std::string name;
+	bool initialized;
+};
+
 struct ASTNode
 {
 	bool is_program;
@@ -34,6 +41,7 @@ struct ASTNode
 	int64_t number;
 
 	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
+	std::vector<ASTVar> local_vars; // used by functions. needed by asm gen to make room on stack
 
 	ASTNode()
 		: is_program(false)

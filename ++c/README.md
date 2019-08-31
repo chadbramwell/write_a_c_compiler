@@ -1,4 +1,4 @@
-# zc
+# ++c (todo: change name to zc)
 (pronounced zee-cee or zero-c) - a programming-language/thought-experiment on how to simplify C and empower developers.
 
 I like C a lot. It's C89 was reasonably simple but still had rough edges. I'd like to see how far I can push the language by removing things. It's easy to add, hard to remove.

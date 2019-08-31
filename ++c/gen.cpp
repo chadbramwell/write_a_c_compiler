@@ -9,6 +9,27 @@ struct gen_ctx
 
 bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
+	if (n->is_function)
+	{
+		for (size_t i = 0; i < n->children.size(); ++i)
+		{
+			if (!gen_asm_node(ctx, n->children[i]))
+				return false;
+		}
+		return true;
+	}
+
+	if (n->is_return)
+	{
+		for (size_t i = 0; i < n->children.size(); ++i)
+		{
+			if (!gen_asm_node(ctx, n->children[i]))
+				return false;
+		}
+		fprintf(ctx->out, "  ret\n");
+		return true;
+	}
+
 	if (n->is_number)
 	{
 		fprintf(ctx->out, "  mov $%" PRIi64 ", %%rax\n", n->number);
@@ -179,30 +200,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 	return false;
 }
 
-bool gen_asm_return(gen_ctx* ctx, const ASTNode* r)
-{
-	for (size_t i = 0; i < r->children.size(); ++i)
-	{
-		if (!gen_asm_node(ctx, r->children[i]))
-			return false;
-	}
-	fprintf(ctx->out, "  ret\n");
-	return true;
-}
-
-bool gen_asm_func(gen_ctx* ctx, const ASTNode* f)
-{
-	for (size_t i = 0; i < f->children.size(); ++i)
-	{
-		if (f->children[i]->is_return)
-		{
-			if (!gen_asm_return(ctx, f->children[i]))
-				return false;
-		}
-	}
-	return true;
-}
-
 bool gen_asm(FILE* file, const AsmInput& input)
 {
 	gen_ctx ctx;
@@ -241,5 +238,5 @@ bool gen_asm(FILE* file, const AsmInput& input)
 	fprintf(ctx.out, "  .globl %s\n", main->func_name.c_str());
 	fprintf(ctx.out, "%s:\n", main->func_name.c_str());
 	//fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
-	return gen_asm_func(&ctx, main);
+	return gen_asm_node(&ctx, main);
 }

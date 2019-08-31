@@ -37,6 +37,9 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * 8/29/2019 - STAGE 5 _INPROGRESS_
   * Lex didn't require any extra work for '=' (aka assignment operator).
   * AST complete but untested. Next up is ASM gen work.
+  * TODO: store local variables in func of ASTNode. (so we can calculate correct size to allocate on stack)
+  * TODO: stringslab so I don't have to copy std::string around everywhere and so I can get back to using memset(0)
+  
 
 ## Useful links:
 * http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/

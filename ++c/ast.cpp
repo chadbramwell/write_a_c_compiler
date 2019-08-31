@@ -698,13 +698,39 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fprintf(file, "%*cparams: ()\n", spaces_indent, ' ');
 		fprintf(file, "%*cbody:\n", spaces_indent, ' ');
 		spaces_indent += 2;
+
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast(file, *self.children[i], spaces_indent + 2);
+		}
+
+		return;
 	}
 	else if (self.is_return)
+	{
+		assert(self.children.size() > 0); // not technically valid. revisit later.
 		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast(file, *self.children[i], spaces_indent + 2);
+		}
+		return;
+	}
 	else if (self.is_number)
+	{
+		assert(self.children.size() == 0);
 		fprintf(file, "Int<%" PRIi64 ">", self.number);
+		return;
+	}
 	else if (self.is_program)
+	{
 		fprintf(file, "program\n");
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast(file, *self.children[i], spaces_indent + 2);
+		}
+		return;
+	}
 	else if (self.is_unary_op)
 	{
 		fprintf(file, "UnOp(%c, ", self.op);
@@ -744,16 +770,34 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fputc(')', file);
 		return;
 	}
-	else
-		fprintf(file, "%*c?????\n", spaces_indent, ' ');
-
+	else if (self.is_variable_declaration)
+	{
+		assert(self.children.size() == 0);
+		fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var_name.c_str());
+		return;
+	}
+	else if (self.is_variable_assignment)
+	{
+		assert(self.children.size() == 1);
+		fprintf(file, "%*cVar<%s>=", spaces_indent, ' ', self.var_name.c_str());
+		dump_ast(file, *self.children[0], 0);
+		fprintf(file, "\n");
+		return;
+	}
+	else if (self.is_variable_usage)
+	{
+		assert(self.children.size() == 0);
+		fprintf(file, "Var<%s>", self.var_name.c_str());
+		return;
+	}
+		
+	// UNKNOWN VALUE
+	debug_break();
+	fprintf(file, "%*c?????\n", spaces_indent, ' ');
 	for (size_t i = 0; i < self.children.size(); ++i)
 	{
 		dump_ast(file, *self.children[i], spaces_indent + 2);
 	}
-
-	if (self.is_program)
-		fputc('\n', file);
 }
 
 bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<ASTError>& errors)
