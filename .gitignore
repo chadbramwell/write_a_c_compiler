@@ -2,6 +2,7 @@
 ++c/++c.vcxproj.user
 ++c/.vs
 ++c/Debug
+++c/x64
 ++c/*.s
 ++c/*.obj
 ++c.timer.log
