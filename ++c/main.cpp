@@ -133,6 +133,9 @@ void test_lexing()
 	lex_directory("./stage_3/valid/");
 	lex_directory("./stage_4/invalid/");
 	lex_directory("./stage_4/valid/");
+	lex_directory("./stage_4/valid_skip_on_failure/");
+	lex_directory("./stage_5/invalid/");
+	lex_directory("./stage_5/valid/");
 
 	timer.end();
 	printf("Lex Tests took %.2fms\n", timer.milliseconds());
@@ -205,6 +208,8 @@ void test_ast()
 	ast_directory("./stage_2/valid/");
 	ast_directory("./stage_3/valid/");
 	ast_directory("./stage_4/valid/");
+	ast_directory("./stage_4/valid_skip_on_failure/");
+	ast_directory("./stage_5/valid/");
 
 	timer.end();
 	printf("AST Tests took %.2fms\n", timer.milliseconds());
@@ -333,6 +338,8 @@ void test_gen()
 	gen_directory("./stage_2/valid/");
 	gen_directory("./stage_3/valid/");
 	gen_directory("./stage_4/valid/");
+	gen_directory("./stage_4/valid_skip_on_failure/");
+	gen_directory("./stage_5/valid/");
 
 	timer.end();
 	printf("GEN/CLANG Tests took %.2fms\n", timer.milliseconds());
