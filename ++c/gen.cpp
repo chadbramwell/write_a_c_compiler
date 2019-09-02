@@ -235,8 +235,8 @@ bool gen_asm(FILE* file, const AsmInput& input)
 	if (!main)
 		return false;
 
-	fprintf(ctx.out, "  .globl %s\n", main->func_name.c_str());
-	fprintf(ctx.out, "%s:\n", main->func_name.c_str());
+	fprintf(ctx.out, "  .globl %s\n", main->func_name.nts);
+	fprintf(ctx.out, "%s:\n", main->func_name.nts);
 	//fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
 	return gen_asm_node(&ctx, main);
 }

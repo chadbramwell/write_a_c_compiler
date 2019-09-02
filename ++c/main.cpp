@@ -434,12 +434,12 @@ void test_simplify_dn_and_1p2()
 
 int main(int argc, char** argv)
 {
-	//test_lexing();
-	//test_ast();
-	//test_gen();
-	//test_simplify_double_negative();
-	//test_simplify_1_plus_2();
-	//test_simplify_dn_and_1p2();
+	test_lexing();
+	test_ast();
+	test_gen();
+	test_simplify_double_negative();
+	test_simplify_1_plus_2();
+	test_simplify_dn_and_1p2();
 
 	bool debug_print = false;
 	bool debug_print_to_disk = false;

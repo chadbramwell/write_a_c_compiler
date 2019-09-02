@@ -16,13 +16,6 @@ struct ASTError
 	const char* reason;
 };
 
-struct ASTVar
-{
-	// assumed type INT for now
-	std::string name;
-	bool initialized;
-};
-
 struct ASTNode
 {
 	bool is_program;
@@ -36,12 +29,11 @@ struct ASTNode
 	bool is_binary_op;
 
 	eToken op;
-	std::string func_name; //TODO: replace these with indicies into a string table
-	std::string var_name;
+	str func_name; //TODO: replace these with indicies into a string table
+	str var_name;
 	int64_t number;
 
 	std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
-	std::vector<ASTVar> local_vars; // used by functions. needed by asm gen to make room on stack
 
 	ASTNode()
 		: is_program(false)

@@ -24,7 +24,6 @@ These include anything wrapped in nested parenthesis because those wash out when
 * for full AST, try to pattern match a simplify rule
   * write match found, store reduction location and value
 * if no more matches found, done, otherwise repeat
-* TODO: write out code based on original source (using token location) instead of writing out based on ASTNodes, double-check redundant/useless parens are removed
 
 # language challenges
 C is a good starting point but it has ~200 undefined behaviors and ~150 implementation-defined behaviors. I have no doubt there are very good reasons for all of that but I don't know what they are. So this will be a path of learning and discovery.
@@ -39,6 +38,10 @@ C is a good starting point but it has ~200 undefined behaviors and ~150 implemen
 * I'd love to get rid of header files but a good first step is to eliminate the requirement for forward-declaration. What's the point?
 * "Debug builds are too slow" is total garbage. Engineers need to learn how to write better code. Compilers have a very large oppurtunity to actual improve the quality of engineers here. If a compiler could regurgatate the code it compiled but with very obvious and easy optimizations then an engineer could diff their source files against these to learn how to improve. The difference between debug and release builds could finally be focused on optimizations that would be too tedious for engineers to write.
 * Compilers should have the freedom to reorder data as needed for optimizations. However, compliers also need to support better (compile-time) reflection systems for serialization.
+* idiv calculates the division and remainder at the same time. A sneaky compiler might be able to optimize that if they detect "c=a/b and r=a%b" but I would think a simpler solution would be to repurpose comma "," for multiple return values. 
+  * "d,r = a/b;" or 
+  * "d = a/b;" or 
+  * "_,r = a/b;" etc...
 
 (reference: http://www.iso-9899.info/wiki/The_Standard)
 

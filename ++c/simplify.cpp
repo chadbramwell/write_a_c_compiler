@@ -52,7 +52,7 @@ void dump_simplify(FILE* out, const ASTNode* root)
 	else if (root->is_function)
 	{
 		const char* func_return_type = "int";
-		const char* func_name = root->func_name.c_str();
+		const char* func_name = root->func_name.nts;
 		fprintf(out, "%s %s(){", func_return_type, func_name);
 		for (size_t i = 0; i < root->children.size(); ++i)
 		{

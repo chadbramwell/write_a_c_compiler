@@ -1,5 +1,6 @@
 #include "lex.h"
 #include "debug.h"
+#include "strings.h"
 
 bool is_letter_or_underscore(char c)
 {
@@ -16,6 +17,9 @@ bool iswhitespace(char c)
 
 bool lex(const LexInput& input, LexOutput& output)
 {
+	const str strInt = strings_insert_nts("int");
+	const str strReturn = strings_insert_nts("return");
+
 	// store length of output buffer and wipe it's length for return value
 	// code below will write to and increment end_output
 	const char* stream = input.stream;
@@ -177,12 +181,12 @@ bool lex(const LexInput& input, LexOutput& output)
 			}
 
 			Token token(eToken::identifier, stream, token_end);
-			token.identifier = std::string(stream, token_end);
+			token.identifier = strings_insert(stream, token_end);
 			stream = token_end;
 
-			if (token.identifier == "int")
+			if (token.identifier.nts == strInt.nts)
 				token.type = eToken::keyword_int;
-			else if (token.identifier == "return")
+			else if (token.identifier.nts == strReturn.nts)
 				token.type = eToken::keyword_return;
 
 			output.tokens.push_back(token);
@@ -206,7 +210,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		switch (token.type)
 		{
 		case eToken::identifier:
-			fwrite(token.identifier.c_str(), 1, token.identifier.length(), file);
+			fwrite(token.identifier.nts, 1, token.identifier.len, file);
 			continue;
 		case eToken::constant_number:
 			fprintf(file, "%" PRIu64, token.number);

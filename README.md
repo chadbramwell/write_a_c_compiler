@@ -6,9 +6,11 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
 
 *gen* generates assembly (.s file) and clang converts that to binary. Eventually I'll add *bin* so I can skip clang directly.
 
-Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint), *dir* (for getting file names in a directory)
+Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint & asserts), *dir* (for getting file names in a directory), *strings* (for compact storage of identifiers and pointer-comparison instead of full string-comparison)
 
-**Never stop learning!** - Chad (@chad_bramwell)
+**Never stop learning!** 
+
+-- Chad (@chad_bramwell)
 
 ## Random Thoughts:
 * Lexing is compression.
@@ -36,10 +38,17 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
    * Added more testing stuff like the ability to test full directories for lex and such.
 * 8/29/2019 - STAGE 5 _INPROGRESS_
   * Lex didn't require any extra work for '=' (aka assignment operator).
-  * AST complete but untested. Next up is ASM gen work.
-  * TODO: store local variables in func of ASTNode. (so we can calculate correct size to allocate on stack)
-  * TODO: stringslab so I don't have to copy std::string around everywhere and so I can get back to using memset(0)
-  
+  * AST complete but untested.
+* 9/2/2019 - STAGE 5 _INPROGRESS_
+  * Added "strings" - a chunk of memory to store all identifiers and enable instant comparison of strings by comparing pointers. This doubled the speed of my compiler and all I did was replace my usage of std::string.
+
+## TODO (other than Stages)
+* Eliminate clang depedency (by generating binary directly)
+* LEARN: compare CL/Clang/GCC optimized assembly to my generated assembly
+* Update Simplify to write out original source with modifications (currently writes out using ASTNodes which elimates all user formatting)
+* ~~stringslab so I don't have to copy std::string around everywhere and so I can get back to using memset(0)~~ **see "strings.h"**
+* Try new simplify rule: Variable elimination (ex: "int main(){int a = 2;return a;}" should become "int main(){return 2;}"
+* Try adding warning for unitialized variable
 
 ## Useful links:
 * http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/
@@ -49,21 +58,18 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * https://github.com/Wilfred/babyc (most of the links above came from here)
 
 ## If I were to write a tutorial:
-* keep it short and simple like http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/ **BUT...**
-* ...don't encourage usage of Flex/Bison. I wanted to learn how to bootstrap from scratch. (i.e. minimal/no depdencies)
-* Encourage FILE* over printf for debugging and generating files on disk. It's not well known that printf is just sugar on top of fprintf(FILE*...) where the FILE* is just stdout.
-* Focusing on a minimal program "int main(){return 2;}" is fantastic! Let the user know upfront that the way to test is to echo the return code of the program, not to look for a stdout print.
-* Stages format from [this tutorial](https://norasandler.com/2017/11/29/Write-a-Compiler.html) appeals to me. Get something simple done, do the next thing. However the focus on "easier" languages like OCaml not so much.
-* Split "STAGE 1" into multiple parts. It took me 3 days to do Stage 1 in C/C++. Have tests for each of the parts. Going forward, make it easy to test each section of the compiler.
-* How to run tests took longer than I would've liked to figure out. Try to make this clearer to the user: what file should be generated where. And support multiple platforms! (test_compiler.sh assumes linux output files)
+* Encourage usage of FILE* due to its versitility writing to stdout or an actual file.
+* Focusing on a minimal program "int main(){return 2;}" is fantastic!
+* Let the user know upfront that the way to test is to echo the return code of the program, not to look for a stdout print.
 * Tutorial should also include binary generation. Skip the assembler entirely! Not sure the level of complexity there but an executable is just a file format that the OS knows to load into executable memory. It's just data.
 
 ## Open questions I have:
 * I'm confident I can make the lexer work without memory allocations - use stack memory, do chunk-based iteration, strings are look-ups into source, all the same as my json parser. Caveat: Minimum required stack memory will be set to max allowable identifier size and I don't know if C places a limit on that. So here's my question, can the same be done for parsing and assembly generation? Could I pipeline the whole process without requiring memory allocation? Probably not, but it's a fun question to think about.
 * Lexer could produce an identifier "int" or a token defining the keyword "int." It doesn't know which is which from context. C declares "int" is a reserved keyword. I don't see why this *MUST* but the case yet. I suspect it's not and it gets thrown onto the heap of "well we made specific decisions to make it easier for a compiler writer"
 
-## See below for original markdown from fork of https://github.com/nlsandler/write_a_c_compiler
----
+## See below for the original README.md which is a fork of https://github.com/nlsandler/write_a_c_compiler
+
+
 # Write a C Compiler!
 
 This is a set of C test programs to help you write your own compiler. They were written to accompany [this tutorial](https://norasandler.com/2017/11/29/Write-a-Compiler.html).

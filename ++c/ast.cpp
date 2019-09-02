@@ -693,7 +693,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 {
 	if (self.is_function)
 	{
-		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', "INT", self.func_name.c_str());
+		fprintf(file, "%*cFUN %s %s:\n", spaces_indent, ' ', "INT", self.func_name.nts);
 		spaces_indent += 2;
 		fprintf(file, "%*cparams: ()\n", spaces_indent, ' ');
 		fprintf(file, "%*cbody:\n", spaces_indent, ' ');
@@ -773,13 +773,13 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	else if (self.is_variable_declaration)
 	{
 		assert(self.children.size() == 0);
-		fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var_name.c_str());
+		fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var_name.nts);
 		return;
 	}
 	else if (self.is_variable_assignment)
 	{
 		assert(self.children.size() == 1);
-		fprintf(file, "%*cVar<%s>=", spaces_indent, ' ', self.var_name.c_str());
+		fprintf(file, "%*cVar<%s>=", spaces_indent, ' ', self.var_name.nts);
 		dump_ast(file, *self.children[0], 0);
 		fprintf(file, "\n");
 		return;
@@ -787,7 +787,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	else if (self.is_variable_usage)
 	{
 		assert(self.children.size() == 0);
-		fprintf(file, "Var<%s>", self.var_name.c_str());
+		fprintf(file, "Var<%s>", self.var_name.nts);
 		return;
 	}
 		

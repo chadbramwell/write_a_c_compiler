@@ -1,7 +1,7 @@
 #pragma once
+#include "strings.h"
 #include <inttypes.h>
 #include <cstdio>
-#include <string>
 #include <vector>
 
 // Below is an attempt at a simple lexer. It's not meant to be optimal.
@@ -46,7 +46,7 @@ struct Token
 	const char* start; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
 	const char* end;
 
-	std::string identifier; // only valid if type == eToken::identifier or one of the keywords
+	str identifier; // only valid if type == eToken::identifier or one of the keywords
 	uint64_t number; // only valid if type == eToken::constant_number
 
 	explicit Token(eToken _type, const char* _start, const char* _end) 
