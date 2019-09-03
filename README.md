@@ -39,8 +39,10 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * 8/29/2019 - STAGE 5 _INPROGRESS_
   * Lex didn't require any extra work for '=' (aka assignment operator).
   * AST complete but untested.
-* 9/2/2019 - STAGE 5 _INPROGRESS_
+* 9/2/2019 - **STAGE 5 TESTS PASS!**
   * Added "strings" - a chunk of memory to store all identifiers and enable instant comparison of strings by comparing pointers. This doubled the speed of my compiler and all I did was replace my usage of std::string.
+  * It's a bit janky and hacky and there's plenty of room for optimizations of the output assembly... but it works.
+  * I'll say this took me ~3 days in total for Stage 5.
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)

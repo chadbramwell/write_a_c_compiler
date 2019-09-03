@@ -770,24 +770,28 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fputc(')', file);
 		return;
 	}
-	else if (self.is_variable_declaration)
+	else if (self.var_name.nts)
 	{
-		assert(self.children.size() == 0);
-		fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var_name.nts);
-		return;
-	}
-	else if (self.is_variable_assignment)
-	{
-		assert(self.children.size() == 1);
-		fprintf(file, "%*cVar<%s>=", spaces_indent, ' ', self.var_name.nts);
-		dump_ast(file, *self.children[0], 0);
+		if (self.is_variable_declaration)
+		{
+			fprintf(file, "%*cVar<%s:%s>", spaces_indent, ' ', "INT", self.var_name.nts);
+		}
+		
+		if (self.is_variable_assignment)
+		{
+			assert(self.children.size() == 1);
+			fprintf(file, "%*cVar<%s>=", spaces_indent, ' ', self.var_name.nts);
+			dump_ast(file, *self.children[0], 0);
+		}
+		
+		if (self.is_variable_usage)
+		{
+			assert(self.children.size() == 0);
+			fprintf(file, "Var<%s>", self.var_name.nts);
+			return;
+		}
+
 		fprintf(file, "\n");
-		return;
-	}
-	else if (self.is_variable_usage)
-	{
-		assert(self.children.size() == 0);
-		fprintf(file, "Var<%s>", self.var_name.nts);
 		return;
 	}
 		

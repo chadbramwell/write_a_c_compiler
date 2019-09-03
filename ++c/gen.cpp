@@ -1,21 +1,76 @@
 #include "gen.h"
 #include "debug.h"
 
+
 struct gen_ctx
 {
 	FILE* out;
 	uint64_t label_index;
+
+	// stack data
+	std::vector<str> stack_vars;
 };
+
+bool insert_stack_var(gen_ctx* ctx, const str& s)
+{
+	for (size_t i = 0; i < ctx->stack_vars.size(); ++i)
+	{
+		if (ctx->stack_vars[i].nts == s.nts)
+			return false;
+	}
+	ctx->stack_vars.push_back(s);
+	return true;
+}
+
+int64_t get_stack_offset(gen_ctx* ctx, const str& s)
+{
+	for (size_t i = 0; i < ctx->stack_vars.size(); ++i)
+	{
+		if (ctx->stack_vars[i].nts == s.nts)
+		{
+			return int64_t(i+1) * -8;
+		}
+	}
+
+	debug_break();
+	return 0;
+}
 
 bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
 	if (n->is_function)
 	{
+		assert(ctx->stack_vars.size() == 0);
+
+		// function prologue
+		fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
+		fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
+
 		for (size_t i = 0; i < n->children.size(); ++i)
 		{
 			if (!gen_asm_node(ctx, n->children[i]))
+			{
+				ctx->stack_vars.clear();
 				return false;
+			}
 		}
+		
+		// Handle main() that does not have a return statement.
+		if (n->children.size() == 0 || !n->children.back()->is_return)
+		{
+			// According to the C11 Standard, if main doesn't have a return statement than it should return 0.
+			//  If a function other than main does not have a return statement than it is undefined behavior.
+			//  Thus the assert. TODO: add error handling and let user know about undefined behavior.
+			assert(n->func_name.nts == strings_insert_nts("main").nts);
+			fprintf(ctx->out, "  mov $0, %%rax\n");
+
+			// function epilogue
+			fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
+			fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
+			fprintf(ctx->out, "  ret\n");
+		}
+
+		ctx->stack_vars.clear();
 		return true;
 	}
 
@@ -26,7 +81,48 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			if (!gen_asm_node(ctx, n->children[i]))
 				return false;
 		}
+
+		// function epilogue
+		fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
+		fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
 		fprintf(ctx->out, "  ret\n");
+
+		return true;
+	}
+
+	if (n->var_name.nts)
+	{
+		if (n->is_variable_declaration)
+		{
+			bool success = insert_stack_var(ctx, n->var_name);
+			if (!success)
+			{
+				debug_break();
+				return false;
+			}
+			fprintf(ctx->out, "  sub $8, %%rsp\n");
+		}
+
+		if (n->is_variable_assignment)
+		{
+			assert(n->children.size() == 1);
+			if (!gen_asm_node(ctx, n->children[0]))
+				return false;
+			int64_t stack_offset = get_stack_offset(ctx, n->var_name);
+			if (!stack_offset)
+				return false;
+			fprintf(ctx->out, "  mov %%rax, %" PRIi64 "(%%rbp)\n", stack_offset);
+			return true;
+		}
+
+		if (n->is_variable_usage)
+		{
+			assert(n->children.size() == 0);
+			fprintf(ctx->out, "  mov %" PRIi64 "(%%rbp), %%rax\n", get_stack_offset(ctx, n->var_name));
+			return true;
+		}
+		
+		// I guess it's just a decl this time...
 		return true;
 	}
 

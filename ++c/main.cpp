@@ -311,6 +311,7 @@ void gen_directory(const char* directory, bool dump_on_success = false)
 			printf("Clang Failed with %d\n", clang_error);
 			gen_asm(stdout, asm_in);
 			success = false;
+			debug_break();
 			continue;
 		}
 
@@ -434,12 +435,12 @@ void test_simplify_dn_and_1p2()
 
 int main(int argc, char** argv)
 {
-	test_lexing();
-	test_ast();
-	test_gen();
-	test_simplify_double_negative();
-	test_simplify_1_plus_2();
-	test_simplify_dn_and_1p2();
+	//test_lexing();
+	//test_ast();
+	//test_gen();
+	//test_simplify_double_negative();
+	//test_simplify_1_plus_2();
+	//test_simplify_dn_and_1p2();
 
 	bool debug_print = false;
 	bool debug_print_to_disk = false;
@@ -594,7 +595,7 @@ int main(int argc, char** argv)
 		main_timer.milliseconds(),
 		clang_timer.milliseconds());
 	fclose(timer_log);
-
+	
 	if(clang_error)
 		debug_break();
 	return clang_error;
