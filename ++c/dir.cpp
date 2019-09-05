@@ -6,7 +6,7 @@
 struct DirectoryIter
 {
 	char fpath[MAX_PATH];
-	size_t dpath_len;
+	size_t dpath_cutoff_of_fpath;
 	
 	WIN32_FIND_DATAA data;
 	HANDLE handle;
@@ -14,16 +14,17 @@ struct DirectoryIter
 
 #define TO_STR(x) #x
 
-DirectoryIter* dopen(const char* path)
+DirectoryIter* dopen(const char* path, const char* filter)
 {
 	DirectoryIter* dir_ptr = (DirectoryIter*)malloc(sizeof(DirectoryIter));
 	DirectoryIter& dir = *dir_ptr;
-	dir.dpath_len = strlen(path);
-	memcpy(dir.fpath, path, dir.dpath_len);
+	dir.dpath_cutoff_of_fpath = strlen(path);
+	memcpy(dir.fpath, path, dir.dpath_cutoff_of_fpath);
 
 	// temporarily using dir.fpath for directory searching
-	dir.fpath[dir.dpath_len] = '*';
-	dir.fpath[dir.dpath_len + 1] = 0;
+	size_t filter_len = strlen(filter);
+	memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, filter, filter_len);
+	dir.fpath[dir.dpath_cutoff_of_fpath + filter_len] = 0;
 	dir.handle = FindFirstFileA(dir.fpath, &dir.data);
 
 	if (dir.handle == INVALID_HANDLE_VALUE)
@@ -46,8 +47,8 @@ DirectoryIter* dopen(const char* path)
 	}
 
 	size_t fname_len = strlen(dir.data.cFileName);
-	memcpy(dir.fpath + dir.dpath_len, dir.data.cFileName, fname_len);
-	dir.fpath[dir.dpath_len + fname_len] = 0;
+	memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, dir.data.cFileName, fname_len);
+	dir.fpath[dir.dpath_cutoff_of_fpath + fname_len] = 0;
 
 	return dir_ptr;
 }
@@ -61,8 +62,8 @@ bool dnext(DirectoryIter* dir_ptr)
 	if (ok)
 	{
 		size_t fname_len = strlen(dir.data.cFileName);
-		memcpy(dir.fpath + dir.dpath_len, dir.data.cFileName, fname_len);
-		dir.fpath[dir.dpath_len + fname_len] = 0;
+		memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, dir.data.cFileName, fname_len);
+		dir.fpath[dir.dpath_cutoff_of_fpath + fname_len] = 0;
 	}
 
 	return ok;

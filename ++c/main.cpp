@@ -87,7 +87,7 @@ void path_init(path* p, const char* filename)
 
 void lex_directory(const char* directory)
 {
-	DirectoryIter* dir = dopen(directory);
+	DirectoryIter* dir = dopen(directory, "*.c");
 	if (!dir) return;
 
 	bool success = true;
@@ -147,7 +147,7 @@ void test_lexing()
 
 void ast_directory(const char* directory, bool dump_on_success = false)
 {
-	DirectoryIter* dir = dopen(directory);
+	DirectoryIter* dir = dopen(directory, "*.c");
 	if (!dir) return;
 
 	bool success = true;

@@ -7,7 +7,7 @@
 
 struct DirectoryIter;
 
-DirectoryIter* dopen(const char* path);
+DirectoryIter* dopen(const char* path, const char* filter = "*");
 bool dnext(DirectoryIter* dir);
 
 bool disdir(DirectoryIter* dir);
