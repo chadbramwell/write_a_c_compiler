@@ -8,6 +8,7 @@
 // <statement> ::= "return" <exp> ";"
 //				| <exp> ";"
 //				| "int" <id>[= <exp>] ";"
+//				| "if" "(" <exp> ")" <statement> [ "else" <statement> ]
 // <exp> ::= <id> "=" <exp> | <logical-or-exp>
 // <logical-or-exp> ::= <logical-and-exp>{ "||" <logical-and-exp> }
 // <logical-and-exp> ::= <equality-exp>{ "&&" <equality-exp> }
@@ -88,10 +89,12 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	// <statement> ::= "return" <exp> ";"
 	//				| <exp> ";"
 	//				| "int" <id> [= <exp>] ";"
+	//				| "if" "(" <exp> ")" <statement> [ "else" <statement> ]
 	assert(io_tokens.next != io_tokens.end);
 
 	TokenStream& tokens = io_tokens;
 	
+	// return
 	if (tokens.next->type == eToken::keyword_return)
 	{
 		ASTNode n;
@@ -114,9 +117,9 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 		io_tokens = tokens;
 		return new ASTNode(n);
-	}
+	}	
 	
-	
+	// variable declaration/init
 	if (tokens.next->type == eToken::keyword_int)
 	{
 		ASTNode n;
@@ -159,7 +162,61 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 		return new ASTNode(n);
 	}
 
-	ASTNode* n = parse_expression(io_tokens, errors);
+	// if statement
+	if (tokens.next->type == eToken::keyword_if)
+	{
+		ASTNode n;
+		n.is_if = true;
+
+		++tokens.next;
+
+
+		// (
+		if (!expect_and_advance(tokens, eToken::open_parens, errors)) return NULL;
+		if (tokens.next == tokens.end) return NULL;
+
+		ASTNode* expr = parse_expression(tokens, errors);
+		if (!expr)
+		{
+			append_error(errors, tokens.next, "expected expression ater if");
+			return NULL;
+		}
+
+		n.children.push_back(expr);
+
+		// )
+		if (!expect_and_advance(tokens, eToken::closed_parens, errors)) return NULL;
+		if (tokens.next == tokens.end) return NULL;
+
+		ASTNode* statement = parse_statement(tokens, errors);
+		if (!statement)
+		{
+			append_error(errors, tokens.next, "expected statement after if");
+			return NULL;
+		}
+
+		n.children.push_back(statement);
+
+		if (tokens.next != tokens.end && tokens.next->type == eToken::keyword_else)
+		{
+			++tokens.next;
+			if (tokens.next == tokens.end) return NULL;
+
+			statement = parse_statement(tokens, errors);
+			if (!statement)
+			{
+				append_error(errors, tokens.next, "expected statement after else");
+				return NULL;
+			}
+
+			n.children.push_back(statement);
+		}
+
+		return new ASTNode(n);
+	}
+
+	// expression (this is at the bottom because it's a helpful catch-all for failures)
+	ASTNode* n = parse_expression(tokens, errors);
 	if (n)
 	{
 		if (!expect_and_advance(tokens, eToken::semicolon, errors)) return NULL;
@@ -716,6 +773,23 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		}
 		return;
 	}
+	else if (self.is_if)
+	{
+		assert(self.children.size() > 1); // expression, statement, (optional) else statement
+		fprintf(file, "%*cIF ", spaces_indent, ' ');
+		dump_ast(file, *self.children[0], 0);
+		fprintf(file, " -> ");
+		dump_ast(file, *self.children[1], 0);
+		fprintf(file, "\n");
+		if (self.children.size() > 2)
+		{
+			assert(self.children.size() == 3);
+			fprintf(file, "%*cELSE -> ", spaces_indent, ' ');
+			dump_ast(file, *self.children[2], 0);
+			fprintf(file, "\n");
+		}
+		return;
+	}
 	else if (self.is_number)
 	{
 		assert(self.children.size() == 0);
@@ -814,7 +888,12 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
 
 	if (tokens.next->type != expected_token)
 	{
-		append_error(errors, tokens.next, "expected token");
+		switch (expected_token)
+		{
+		case ';': append_error(errors, tokens.next, "expected ;"); break;
+		default:
+			append_error(errors, tokens.next, "expected <UNKNOWN> token");
+		}
 		return false;
 	}
 

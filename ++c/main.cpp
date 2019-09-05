@@ -136,6 +136,10 @@ void test_lexing()
 	lex_directory("./stage_4/valid_skip_on_failure/");
 	lex_directory("./stage_5/invalid/");
 	lex_directory("./stage_5/valid/");
+	lex_directory("./stage_6/invalid/statement/");
+	lex_directory("./stage_6/invalid/expression/");
+	lex_directory("./stage_6/valid/statement/");
+	lex_directory("./stage_6/valid/expression/");
 
 	timer.end();
 	printf("Lex Tests took %.2fms\n", timer.milliseconds());
@@ -210,6 +214,8 @@ void test_ast()
 	ast_directory("./stage_4/valid/");
 	ast_directory("./stage_4/valid_skip_on_failure/");
 	ast_directory("./stage_5/valid/");
+	ast_directory("./stage_6/valid/statement/");
+	ast_directory("./stage_6/valid/expression/");
 
 	timer.end();
 	printf("AST Tests took %.2fms\n", timer.milliseconds());
@@ -341,6 +347,8 @@ void test_gen()
 	gen_directory("./stage_4/valid/");
 	gen_directory("./stage_4/valid_skip_on_failure/");
 	gen_directory("./stage_5/valid/");
+	gen_directory("./stage_6/valid/statement/");
+	gen_directory("./stage_6/valid/expression/");
 
 	timer.end();
 	printf("GEN/CLANG Tests took %.2fms\n", timer.milliseconds());
@@ -435,9 +443,9 @@ void test_simplify_dn_and_1p2()
 
 int main(int argc, char** argv)
 {
-	//test_lexing();
-	//test_ast();
-	//test_gen();
+	test_lexing();
+	test_ast();
+	test_gen();
 	//test_simplify_double_negative();
 	//test_simplify_1_plus_2();
 	//test_simplify_dn_and_1p2();

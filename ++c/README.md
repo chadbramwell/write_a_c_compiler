@@ -34,6 +34,8 @@ C is a good starting point but it has ~200 undefined behaviors and ~150 implemen
 * Remove forward-decl requirement. (Broken, ex: can't forward-decl FILE)
 
 # half-baked ideas
+* @ keywords that can be used to add new keywords and reduce conflicts with existing keywords. Ex: @pure
+* "pure" keyword that can be attached to functions. A pure function guarantees that it and none of the functions it calls touch any global state.
 * Simpler syntax for data types. Instead of char/int/uint64_t it's i8/i32/u64 and beyond: users can define arbitrary bit size of their variables effectively combining two different pieces of C syntax into one. Bit manipulation code will be automatically generated for you.
 * I'd love to get rid of header files but a good first step is to eliminate the requirement for forward-declaration. What's the point?
 * "Debug builds are too slow" is total garbage. Engineers need to learn how to write better code. Compilers have a very large oppurtunity to actual improve the quality of engineers here. If a compiler could regurgatate the code it compiled but with very obvious and easy optimizations then an engineer could diff their source files against these to learn how to improve. The difference between debug and release builds could finally be focused on optimizations that would be too tedious for engineers to write.

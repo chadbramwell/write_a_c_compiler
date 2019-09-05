@@ -20,10 +20,12 @@ enum eToken : uint8_t
 	plus			= '+',//43 - could be sign decl or binary add
 	dash			= '-',//45 - could be sign decl or binary sub
 	forward_slash	= '/',//47
+	colon			= ':',//58
 	semicolon		= ';',//59
 	less_than		= '<',//60
 	assignment		= '=',//61
 	greater_than	= '>',//62
+	question_mark	= '?',//63
 	open_curly		= '{',//123
 	bitwise_or		= '|',//124
 	closed_curly	= '}',//125
@@ -38,6 +40,8 @@ enum eToken : uint8_t
 
 	keyword_int,
 	keyword_return,
+	keyword_if,
+	keyword_else
 };
 
 struct Token

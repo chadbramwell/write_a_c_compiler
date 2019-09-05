@@ -126,6 +126,31 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		return true;
 	}
 
+	if (n->is_if)
+	{
+		assert(n->children.size() > 1);
+		bool has_else = n->children.size() > 2;
+		if (has_else) assert(n->children.size() == 3);
+
+		const uint64_t label_else = ctx->label_index++;
+		const uint64_t label_end = ctx->label_index++;
+
+		if (!gen_asm_node(ctx, n->children[0])) // expression
+			return false;
+		fprintf(ctx->out, "  cmp $0, %%rax\n");
+		fprintf(ctx->out, "  je if_%" PRIu64 "\n", has_else ? label_else : label_end);
+		if (!gen_asm_node(ctx, n->children[1])) // statement
+			return false;
+		fprintf(ctx->out, "if_%" PRIu64 ":\n", has_else ? label_else : label_end);
+		if (has_else)
+		{
+			if (!gen_asm_node(ctx, n->children[2])) // else statement
+				return false;
+			fprintf(ctx->out, "if_%" PRIu64 ":\n", label_end);
+		}
+		return true;
+	}
+
 	if (n->is_number)
 	{
 		fprintf(ctx->out, "  mov $%" PRIi64 ", %%rax\n", n->number);

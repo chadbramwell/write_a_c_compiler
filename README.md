@@ -15,6 +15,7 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 ## Random Thoughts:
 * Lexing is compression.
 * AST is pattern matching.
+* I liked these lines from Stage 6: "an expression has a value, but a statement doesn’t" "a statement can contain other statements, but an expression can’t contain statements"
 
 ## Timeline 
 **Note: 'day' in descriptions below is more like a few hours of work**

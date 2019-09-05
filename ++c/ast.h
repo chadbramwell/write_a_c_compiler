@@ -21,6 +21,7 @@ struct ASTNode
 	bool is_program;
 	bool is_function;
 	bool is_return;
+	bool is_if;
 	bool is_variable_declaration;
 	bool is_variable_assignment;
 	bool is_variable_usage;
@@ -39,6 +40,7 @@ struct ASTNode
 		: is_program(false)
 		, is_function(false)
 		, is_return(false)
+		, is_if(false)
 		, is_variable_declaration(false)
 		, is_variable_assignment(false)
 		, is_variable_usage(false)
