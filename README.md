@@ -44,6 +44,11 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Added "strings" - a chunk of memory to store all identifiers and enable instant comparison of strings by comparing pointers. This doubled the speed of my compiler and all I did was replace my usage of std::string.
   * It's a bit janky and hacky and there's plenty of room for optimizations of the output assembly... but it works.
   * I'll say this took me ~3 days in total for Stage 5.
+* 9/6/2019 - **STAGE 6 TESTS PASS!**
+  * Took maybe 2 days?
+  * if/else and ?: were quite similar
+  * I think these were easier because the cmp/jmp assembly stuff had already been done in the past with binary operations.
+  * Added -test option to test everything. TODO: actually test clang's compilation of prog and its return value to our prog's return value.
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)

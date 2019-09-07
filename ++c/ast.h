@@ -28,9 +28,10 @@ struct ASTNode
 	bool is_number;
 	bool is_unary_op;
 	bool is_binary_op;
+	bool is_ternery_op;
 
 	eToken op;
-	str func_name; //TODO: replace these with indicies into a string table
+	str func_name;
 	str var_name;
 	int64_t number;
 
@@ -47,6 +48,7 @@ struct ASTNode
 		, is_number(false)
 		, is_unary_op(false)
 		, is_binary_op(false)
+		, is_ternery_op(false)
 		, op(eToken::UNKNOWN)
 		, number(0)
 	{

@@ -125,21 +125,21 @@ void test_lexing()
 	Timer timer;
 	timer.start();
 
-	lex_directory("./stage_1/invalid/"); // note that most of the 'invalid' .c files are invalid due to AST issues, not lexing issues.
-	lex_directory("./stage_1/valid/");
-	lex_directory("./stage_2/invalid/");
-	lex_directory("./stage_2/valid/");
-	lex_directory("./stage_3/invalid/");
-	lex_directory("./stage_3/valid/");
-	lex_directory("./stage_4/invalid/");
-	lex_directory("./stage_4/valid/");
-	lex_directory("./stage_4/valid_skip_on_failure/");
-	lex_directory("./stage_5/invalid/");
-	lex_directory("./stage_5/valid/");
-	lex_directory("./stage_6/invalid/statement/");
-	lex_directory("./stage_6/invalid/expression/");
-	lex_directory("./stage_6/valid/statement/");
-	lex_directory("./stage_6/valid/expression/");
+	lex_directory("../stage_1/invalid/"); // note that most of the 'invalid' .c files are invalid due to AST issues, not lexing issues.
+	lex_directory("../stage_1/valid/");
+	lex_directory("../stage_2/invalid/");
+	lex_directory("../stage_2/valid/");
+	lex_directory("../stage_3/invalid/");
+	lex_directory("../stage_3/valid/");
+	lex_directory("../stage_4/invalid/");
+	lex_directory("../stage_4/valid/");
+	lex_directory("../stage_4/valid_skip_on_failure/");
+	lex_directory("../stage_5/invalid/");
+	lex_directory("../stage_5/valid/");
+	lex_directory("../stage_6/invalid/statement/");
+	lex_directory("../stage_6/invalid/expression/");
+	lex_directory("../stage_6/valid/statement/");
+	lex_directory("../stage_6/valid/expression/");
 
 	timer.end();
 	printf("Lex Tests took %.2fms\n", timer.milliseconds());
@@ -208,14 +208,14 @@ void test_ast()
 	Timer timer;
 	timer.start();
 
-	ast_directory("./stage_1/valid/");
-	ast_directory("./stage_2/valid/");
-	ast_directory("./stage_3/valid/");
-	ast_directory("./stage_4/valid/");
-	ast_directory("./stage_4/valid_skip_on_failure/");
-	ast_directory("./stage_5/valid/");
-	ast_directory("./stage_6/valid/statement/");
-	ast_directory("./stage_6/valid/expression/");
+	ast_directory("../stage_1/valid/");
+	ast_directory("../stage_2/valid/");
+	ast_directory("../stage_3/valid/");
+	ast_directory("../stage_4/valid/");
+	ast_directory("../stage_4/valid_skip_on_failure/");
+	ast_directory("../stage_5/valid/");
+	ast_directory("../stage_6/valid/statement/");
+	ast_directory("../stage_6/valid/expression/");
 
 	timer.end();
 	printf("AST Tests took %.2fms\n", timer.milliseconds());
@@ -223,7 +223,7 @@ void test_ast()
 
 void gen_directory(const char* directory, bool dump_on_success = false)
 {
-	DirectoryIter* dir = dopen(directory);
+	DirectoryIter* dir = dopen(directory, "*.c");
 	if (!dir) return;
 
 	bool success = true;
@@ -341,14 +341,14 @@ void test_gen()
 	Timer timer;
 	timer.start();
 
-	gen_directory("./stage_1/valid/");
-	gen_directory("./stage_2/valid/");
-	gen_directory("./stage_3/valid/");
-	gen_directory("./stage_4/valid/");
-	gen_directory("./stage_4/valid_skip_on_failure/");
-	gen_directory("./stage_5/valid/");
-	gen_directory("./stage_6/valid/statement/");
-	gen_directory("./stage_6/valid/expression/");
+	gen_directory("../stage_1/valid/");
+	gen_directory("../stage_2/valid/");
+	gen_directory("../stage_3/valid/");
+	gen_directory("../stage_4/valid/");
+	gen_directory("../stage_4/valid_skip_on_failure/");
+	gen_directory("../stage_5/valid/");
+	gen_directory("../stage_6/valid/statement/");
+	gen_directory("../stage_6/valid/expression/");
 
 	timer.end();
 	printf("GEN/CLANG Tests took %.2fms\n", timer.milliseconds());
@@ -443,12 +443,18 @@ void test_simplify_dn_and_1p2()
 
 int main(int argc, char** argv)
 {
-	test_lexing();
-	test_ast();
-	test_gen();
-	//test_simplify_double_negative();
-	//test_simplify_1_plus_2();
-	//test_simplify_dn_and_1p2();
+	for (int i = 1; i < argc; ++i)
+	{
+		if (0 == strcmp(argv[i], "-test"))
+		{
+			test_lexing();
+			test_ast();
+			test_gen();
+			//test_simplify_double_negative();
+			//test_simplify_1_plus_2();
+			//test_simplify_dn_and_1p2();
+		}
+	}
 
 	bool debug_print = false;
 	bool debug_print_to_disk = false;
@@ -492,7 +498,7 @@ int main(int argc, char** argv)
 
 	path p;
 	path_init(&p, lex_in.filename);
-
+	
 	LexOutput lex_out;
 	if (!lex(lex_in, lex_out))
 	{
@@ -525,7 +531,6 @@ int main(int argc, char** argv)
 	ASTNode* root = ast(ast_in, errors);
 	if (!root)
 	{
-		fprintf(stdout, "ast failure\n");
 		dump_ast_errors(stdout, errors, lex_in);
 		main_timer.end();
 		fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
@@ -551,7 +556,7 @@ int main(int argc, char** argv)
 
 	FILE* asm_test_file;
 	if (0 != tmpfile_s(&asm_test_file))
-		return 3;
+		return 4;
 	if (!gen_asm(asm_test_file, asm_in))
 	{
 		fprintf(stdout, "gen_asm failure\n");
@@ -606,5 +611,10 @@ int main(int argc, char** argv)
 	
 	if(clang_error)
 		debug_break();
+	//else
+	//{
+		//int prog_result = system("C:/Users/chadbramwell/Desktop/practice/write_a_c_compiler/stage_6/valid/expression/multiple_ternary.exe");
+		//printf("Program Result: %d\n", prog_result);
+	//}
 	return clang_error;
 }

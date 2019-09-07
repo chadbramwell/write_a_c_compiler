@@ -132,22 +132,55 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		bool has_else = n->children.size() > 2;
 		if (has_else) assert(n->children.size() == 3);
 
-		const uint64_t label_else = ctx->label_index++;
-		const uint64_t label_end = ctx->label_index++;
+		char label_else[32];
+		sprintf_s(label_else, "else_%" PRIu64, ctx->label_index++);
+		char label_end[32];
+		sprintf_s(label_end, "fi_%" PRIu64, ctx->label_index++);
 
-		if (!gen_asm_node(ctx, n->children[0])) // expression
+		if (!gen_asm_node(ctx, n->children[0])) // if conditional expression
 			return false;
 		fprintf(ctx->out, "  cmp $0, %%rax\n");
-		fprintf(ctx->out, "  je if_%" PRIu64 "\n", has_else ? label_else : label_end);
-		if (!gen_asm_node(ctx, n->children[1])) // statement
-			return false;
-		fprintf(ctx->out, "if_%" PRIu64 ":\n", has_else ? label_else : label_end);
-		if (has_else)
+		if (!has_else)
 		{
+			fprintf(ctx->out, "  je %s\n", label_end);
+			if (!gen_asm_node(ctx, n->children[1])) // if statement
+				return false;
+		}
+		else
+		{
+			fprintf(ctx->out, "  je %s\n", label_else);
+			if (!gen_asm_node(ctx, n->children[1])) // if statement
+				return false;
+			fprintf(ctx->out, "  jmp %s\n", label_end);
+
+			fprintf(ctx->out, "%s:\n", label_else);
 			if (!gen_asm_node(ctx, n->children[2])) // else statement
 				return false;
-			fprintf(ctx->out, "if_%" PRIu64 ":\n", label_end);
 		}
+		fprintf(ctx->out, "%s:\n", label_end);
+		return true;
+	}
+
+	if (n->is_ternery_op)
+	{
+		assert(n->children.size() == 3);
+
+		char label_else[32];
+		sprintf_s(label_else, "ter_false_%" PRIu64, ctx->label_index++);
+		char label_end[32];
+		sprintf_s(label_end, "ter_end_%" PRIu64, ctx->label_index++);
+
+		if (!gen_asm_node(ctx, n->children[0]))
+			return false;
+		fprintf(ctx->out, "  cmp $0, %%rax\n");
+		fprintf(ctx->out, "  je %s\n", label_else);
+		if (!gen_asm_node(ctx, n->children[1]))
+			return false;
+		fprintf(ctx->out, "  jmp %s\n", label_end);
+		fprintf(ctx->out, "%s:\n", label_else);
+		if (!gen_asm_node(ctx, n->children[2]))
+			return false;
+		fprintf(ctx->out, "%s:\n", label_end);
 		return true;
 	}
 
