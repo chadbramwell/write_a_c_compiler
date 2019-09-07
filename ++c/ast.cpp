@@ -10,6 +10,7 @@
 // <statement> ::= "return" <exp> ";"
 //				| <exp> ";"
 //				| "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+//				| "{" { <block-item> } "}"
 // <exp> ::= <id> "=" <exp> | <conditional-exp>
 // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
 // <logical-or-exp> ::= <logical-and-exp>{ "||" <logical-and-exp> }
@@ -70,7 +71,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	if (!expect_and_advance(tokens, eToken::open_curly, errors)) return NULL;
 
 	// body
-	while (tokens.next != tokens.end && tokens.next->type != eToken::closed_curly)
+	while (tokens.next != tokens.end)
 	{
 		ASTNode* bi = parse_block_item(tokens, errors);
 		if (!bi)
@@ -169,6 +170,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	// <statement> ::= "return" <exp> ";"
 	//				| <exp> ";"
 	//				| "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+	//				| "{" { <block-item> } "}"
 	assert(io_tokens.next != io_tokens.end);
 	TokenStream& tokens = io_tokens;
 	
@@ -257,6 +259,32 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 			n.children.push_back(statement);
 		}
+
+		io_tokens = tokens;
+		return new ASTNode(n);
+	}
+
+	// block list
+	if (tokens.next->type == eToken::open_curly)
+	{
+		ASTNode n;
+		n.is_block_list = true;
+		++tokens.next;
+
+		while (tokens.next != tokens.end)
+		{
+			ASTNode* bi = parse_block_item(tokens, errors);
+			if (!bi)
+			{
+				if (errors.size() != 0)
+					return NULL;
+				break;
+			}
+			n.children.push_back(bi);
+		}
+
+		if (!expect_and_advance(tokens, eToken::closed_curly, errors))
+			return NULL;
 
 		io_tokens = tokens;
 		return new ASTNode(n);
@@ -838,6 +866,16 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		}
 		return;
 	}
+	else if (self.is_block_list)
+	{
+		fprintf(file, "%*cSTART_BLOCK==[\n", spaces_indent, ' ');
+		for (size_t i = 0; i < self.children.size(); ++i)
+		{
+			dump_ast(file, *self.children[i], spaces_indent + 2);
+		}
+		fprintf(file, "%*c]==END_BLOCK\n", spaces_indent, ' ');
+		return;
+	}
 	else if (self.is_if)
 	{
 		assert(self.children.size() > 1); // expression, statement, (optional) else statement
@@ -980,8 +1018,10 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
 		switch (expected_token)
 		{
 		case ';': append_error(errors, tokens.next, "expected ;"); break;
+		case '}': append_error(errors, tokens.next, "expected }"); break;
 		default:
-			append_error(errors, tokens.next, "expected <UNKNOWN> token");
+			debug_break();
+			append_error(errors, tokens.next, "<UNKNOWN> token");
 		}
 		return false;
 	}
@@ -996,6 +1036,8 @@ void append_error(std::vector<ASTError>& errors, const Token* token, const char*
 	e.token = token;
 	e.reason = reason;
 	errors.push_back(e);
+
+	debug_break();
 }
 
 void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason)

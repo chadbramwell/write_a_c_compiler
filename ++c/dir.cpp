@@ -91,3 +91,11 @@ uint64_t dfsize(DirectoryIter* dir)
 	size |= dir->data.nFileSizeLow;
 	return size;
 }
+
+char g_full_path[MAX_PATH];
+const char* get_absolute_path(const char* partial_path)
+{
+	DWORD copied_or_required_chars = GetFullPathNameA(partial_path, MAX_PATH, g_full_path, NULL);
+	assert(copied_or_required_chars < MAX_PATH);
+	return g_full_path;
+}

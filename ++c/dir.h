@@ -14,3 +14,5 @@ bool disdir(DirectoryIter* dir);
 const char* dfname(DirectoryIter* dir);
 const char* dfpath(DirectoryIter* dir);
 uint64_t dfsize(DirectoryIter* dir);
+
+const char* get_absolute_path(const char* partial_path);

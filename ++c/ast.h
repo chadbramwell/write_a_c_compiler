@@ -20,6 +20,7 @@ struct ASTNode
 {
 	bool is_program;
 	bool is_function;
+	bool is_block_list;
 	bool is_return;
 	bool is_if;
 	bool is_variable_declaration;
@@ -40,6 +41,7 @@ struct ASTNode
 	ASTNode()
 		: is_program(false)
 		, is_function(false)
+		, is_block_list(false)
 		, is_return(false)
 		, is_if(false)
 		, is_variable_declaration(false)

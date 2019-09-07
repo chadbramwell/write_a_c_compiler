@@ -42,6 +42,19 @@ bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 	return true;
 }
 
+void compare_to_clang(const char* source_path, const char* exe_path)
+{
+	char buff[256];
+	sprintf_s(buff, "clang %s", source_path);
+	int compilation_result = system(buff);
+	assert(compilation_result == 0);
+
+	int clang_result = system("a.exe");
+	int our_result = system(exe_path);
+
+	assert(clang_result == our_result);
+}
+
 struct path
 {
 	const char* original;
@@ -140,6 +153,8 @@ void test_lexing()
 	lex_directory("../stage_6/invalid/expression/");
 	lex_directory("../stage_6/valid/statement/");
 	lex_directory("../stage_6/valid/expression/");
+	lex_directory("../stage_7/invalid/");
+	lex_directory("../stage_7/valid/");
 
 	timer.end();
 	printf("Lex Tests took %.2fms\n", timer.milliseconds());
@@ -216,6 +231,7 @@ void test_ast()
 	ast_directory("../stage_5/valid/");
 	ast_directory("../stage_6/valid/statement/");
 	ast_directory("../stage_6/valid/expression/");
+	ast_directory("../stage_7/valid/");
 
 	timer.end();
 	printf("AST Tests took %.2fms\n", timer.milliseconds());
@@ -321,6 +337,8 @@ void gen_directory(const char* directory, bool dump_on_success = false)
 			continue;
 		}
 
+		compare_to_clang(file_path, exe_file_path);
+
 		if (dump_on_success)
 		{
 			printf("===%s===\n", file_path);
@@ -349,6 +367,7 @@ void test_gen()
 	gen_directory("../stage_5/valid/");
 	gen_directory("../stage_6/valid/statement/");
 	gen_directory("../stage_6/valid/expression/");
+	gen_directory("../stage_7/valid/");
 
 	timer.end();
 	printf("GEN/CLANG Tests took %.2fms\n", timer.milliseconds());
@@ -595,7 +614,7 @@ int main(int argc, char** argv)
 		clang_error = system(clang_buffer);
 		clang_timer.end();
 		if (debug_print)
-			fprintf(stdout, "Clang Result: %d\n", clang_error);
+			fprintf(stdout, "Clang Compliation Result: %d\n", clang_error);
 		if(debug_print_timers)
 			fprintf(stdout, "Clang Took %.2fms\n", clang_timer.milliseconds());
 	}
@@ -611,10 +630,9 @@ int main(int argc, char** argv)
 	
 	if(clang_error)
 		debug_break();
-	//else
-	//{
-		//int prog_result = system("C:/Users/chadbramwell/Desktop/practice/write_a_c_compiler/stage_6/valid/expression/multiple_ternary.exe");
-		//printf("Program Result: %d\n", prog_result);
-	//}
+	else
+	{
+		compare_to_clang(p.original, p.exe_path);
+	}
 	return clang_error;
 }
