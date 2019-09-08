@@ -288,8 +288,8 @@ void gen_directory(const char* directory, bool dump_on_success = false)
 		AsmInput asm_in;
 		asm_in.root = root;
 
-		char asm_file_path[L_tmpnam_s+2];
-		char exe_file_path[L_tmpnam_s+2];
+		char asm_file_path[L_tmpnam_s+2]; // NOTE: +2 for .s
+		char exe_file_path[L_tmpnam_s+4]; // NOTE: +4 for .exe
 		errno_t err = tmpnam_s(asm_file_path);
 		if (err) debug_break();
 		err = tmpnam_s(exe_file_path);
@@ -299,15 +299,11 @@ void gen_directory(const char* directory, bool dump_on_success = false)
 		{
 			char* set_s = asm_file_path;
 			while (*set_s) ++set_s;
-			*set_s++ = '.';
-			*set_s++ = 's';
-			*set_s = 0;
+			memcpy(set_s, ".s", 3); // 3 to include null-terminator
 
 			set_s = exe_file_path;
 			while (*set_s) ++set_s;
-			*set_s++ = '.';
-			*set_s++ = 's';
-			*set_s = 0;
+			memcpy(set_s, ".exe", 5); // 5 to include null-terminator
 		}
 
 		{
@@ -472,6 +468,8 @@ int main(int argc, char** argv)
 			//test_simplify_double_negative();
 			//test_simplify_1_plus_2();
 			//test_simplify_dn_and_1p2();
+
+			return 0;
 		}
 	}
 
@@ -632,7 +630,12 @@ int main(int argc, char** argv)
 		debug_break();
 	else
 	{
-		compare_to_clang(p.original, p.exe_path);
+		char source_path[260];
+		char exe_path[260];
+		bool ok = get_absolute_path(p.original, &source_path);
+		ok &= get_absolute_path(p.exe_path, &exe_path);
+		assert(ok);
+		compare_to_clang(source_path, exe_path);
 	}
 	return clang_error;
 }

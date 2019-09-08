@@ -5,30 +5,100 @@
 struct gen_ctx
 {
 	FILE* out;
-	uint64_t label_index;
+	uint64_t label_index; // every label needs to be unique, this is appended to every label to ensure that's the case.
 
 	// stack data
-	std::vector<str> stack_vars;
+	str stack_frames[256][256];
+	uint8_t sv_frame_len[256];
+	uint8_t sv_num_frames;
 };
 
-bool insert_stack_var(gen_ctx* ctx, const str& s)
+bool push_stack_frame(gen_ctx* ctx)
 {
-	for (size_t i = 0; i < ctx->stack_vars.size(); ++i)
+	if (ctx->sv_num_frames == 256)
 	{
-		if (ctx->stack_vars[i].nts == s.nts)
-			return false;
+		debug_break(); // error! out of memory!
+		return false;
 	}
-	ctx->stack_vars.push_back(s);
+
+	ctx->sv_frame_len[ctx->sv_num_frames] = 0;
+	++ctx->sv_num_frames;
 	return true;
 }
 
-int64_t get_stack_offset(gen_ctx* ctx, const str& s)
+bool pop_stack_frame(gen_ctx* ctx)
 {
-	for (size_t i = 0; i < ctx->stack_vars.size(); ++i)
+	if (ctx->sv_num_frames == 0)
 	{
-		if (ctx->stack_vars[i].nts == s.nts)
+		debug_break(); // error! too many pops!
+		return false;
+	}
+
+	--ctx->sv_num_frames;
+	return true;
+}
+
+bool push_vars(gen_ctx* ctx, const str* const vars, uint8_t num_vars)
+{
+	if (ctx->sv_num_frames == 0)
+	{
+		debug_break(); // error! push a stack frame first!
+		return false;
+	}
+
+	uint8_t sf_index = ctx->sv_num_frames - 1;
+
+	if (ctx->sv_frame_len[sf_index] >= 256 - num_vars)
+	{
+		debug_break(); // error! no more room for var on stack!
+		return false;
+	}
+
+	str* sf_iter = ctx->stack_frames[ctx->sv_num_frames - 1];
+	str* sf_end = sf_iter + ctx->sv_frame_len[ctx->sv_num_frames - 1];
+	const str* vars_iter = vars;
+	const str* vars_end = vars + num_vars;
+
+	// make sure each var is not already on stack
+	for(; sf_iter != sf_end; ++sf_iter)
+	{
+		for(vars_iter = vars; vars_iter != vars_end; ++vars_iter)
 		{
-			return int64_t(i+1) * -8;
+			if (sf_iter->nts == vars_iter->nts)
+			{
+				return false;
+			}
+		}
+	}
+	
+	memcpy(sf_end, vars, sizeof(vars[0]) * num_vars);
+	ctx->sv_frame_len[sf_index] += num_vars;
+	return true;
+}
+
+uint64_t get_stack_offset(gen_ctx* ctx, const str& s)
+{
+	for (int64_t i = ctx->sv_num_frames - 1; i >= 0; --i)
+	{
+		const str* const sf_start = ctx->stack_frames[i];
+		const str* sf_iter = sf_start;
+		const str* const sf_end = sf_iter + ctx->sv_frame_len[i];
+
+		while (sf_iter != sf_end)
+		{
+			if (sf_iter->nts == s.nts)
+			{
+				int64_t offset = (1 + sf_iter - sf_start) * 8;
+				--i;
+				while (i >= 0)
+				{
+					offset += ctx->sv_frame_len[i] * 8;
+					--i;
+				}
+
+				return offset;
+			}
+			++sf_iter;
 		}
 	}
 
@@ -40,7 +110,12 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
 	if (n->is_function)
 	{
-		assert(ctx->stack_vars.size() == 0);
+		bool ok = push_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
 
 		// function prologue
 		fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
@@ -49,10 +124,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		for (size_t i = 0; i < n->children.size(); ++i)
 		{
 			if (!gen_asm_node(ctx, n->children[i]))
-			{
-				ctx->stack_vars.clear();
 				return false;
-			}
 		}
 		
 		// Handle main() that does not have a return statement.
@@ -70,8 +142,29 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			fprintf(ctx->out, "  ret\n");
 		}
 
-		ctx->stack_vars.clear();
-		return true;
+		ok = pop_stack_frame(ctx);
+		assert(ok);
+		return ok;
+	}
+
+	if (n->is_block_list)
+	{
+		bool ok = push_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		for (size_t i = 0; i < n->children.size(); ++i)
+		{
+			if (!gen_asm_node(ctx, n->children[i]))
+				return false;
+		}
+
+		ok = pop_stack_frame(ctx);
+		assert(ok);
+		return ok;
 	}
 
 	if (n->is_return)
@@ -94,8 +187,8 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 	{
 		if (n->is_variable_declaration)
 		{
-			bool success = insert_stack_var(ctx, n->var_name);
-			if (!success)
+			bool ok = push_vars(ctx, &n->var_name, 1);
+			if (!ok)
 			{
 				debug_break();
 				return false;
@@ -106,19 +199,33 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		if (n->is_variable_assignment)
 		{
 			assert(n->children.size() == 1);
+
+			// special case, assigning a literal
+			// THIS DOESN'T WORK!!!
+			// EXAMPLE WHY THIS WONT WORK: (a=1)|| ... // the gist is that assigning a value also has a value itself. 
+			// THIS MIGHT STILL WORK IF: we are not part of an expression. Best test for that? Perhaps if our parent is a function or block list?
+			//if (n->children[0]->is_number)
+			//{
+			//	uint64_t stack_offset = get_stack_offset(ctx, n->var_name);
+			//	if (!stack_offset)
+			//		return false;
+			//	fprintf(ctx->out, "  movq $%" PRIi64 ", -%" PRIu64 "(%%rbp)\n", n->children[0]->number, stack_offset);
+			//	return true;
+			//}
+
 			if (!gen_asm_node(ctx, n->children[0]))
 				return false;
-			int64_t stack_offset = get_stack_offset(ctx, n->var_name);
+			uint64_t stack_offset = get_stack_offset(ctx, n->var_name);
 			if (!stack_offset)
 				return false;
-			fprintf(ctx->out, "  mov %%rax, %" PRIi64 "(%%rbp)\n", stack_offset);
+			fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp)\n", stack_offset);
 			return true;
 		}
 
 		if (n->is_variable_usage)
 		{
 			assert(n->children.size() == 0);
-			fprintf(ctx->out, "  mov %" PRIi64 "(%%rbp), %%rax\n", get_stack_offset(ctx, n->var_name));
+			fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax\n", get_stack_offset(ctx, n->var_name));
 			return true;
 		}
 		
@@ -202,15 +309,15 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		{
 		case '-': fprintf(ctx->out, "  neg %%rax\n"); return true;
 		case '~': fprintf(ctx->out, "  not %%rax\n"); return true;
-		}
-
-		if (n->op == '!')
-		{
+		case '!':
 			fprintf(ctx->out, "  cmp $0, %%rax\n");	// set ZF on if exp == 0, set it off otherwise
 			fprintf(ctx->out, "  mov $0, %%rax\n"); // zero out EAX (doesn't change FLAGS), xor %eax %eax is better because it sets a flag we can't use it because we depend on the ZF flag on the next line
 			fprintf(ctx->out, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
 			return true;
 		}
+
+		debug_break();
+		return false;
 	}
 
 	if (n->is_binary_op)
@@ -359,6 +466,7 @@ bool gen_asm(FILE* file, const AsmInput& input)
 	gen_ctx ctx;
 	ctx.out = file;
 	ctx.label_index = 0;
+	ctx.sv_num_frames = 0;
 
 	/*
 		.text

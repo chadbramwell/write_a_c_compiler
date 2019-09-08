@@ -49,6 +49,10 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * if/else and ?: were quite similar
   * I think these were easier because the cmp/jmp assembly stuff had already been done in the past with binary operations.
   * Added -test option to test everything. TODO: actually test clang's compilation of prog and its return value to our prog's return value.
+* 9/7/2019 - **STAGE 7 TESTS PASS!**
+  * Took less than a day, relatively easy addition.
+  * Note that my internal stack is limited (max of 256 vars on a stack frame, max of 256 stack frames) but that's fine for now.
+  * Strangely, I ignored almost everything in https://norasandler.com/2018/03/14/Write-a-Compiler-7.html -> I think it's the first time an algorithm was described in depth and honestly the algo requirements seemed really simple to me. I also totally ignored the stuff on "deallocating variables on the stack" because there's no point. It's a waste of assembly and more complicated than it needs to be. Note that my feeling here is in stark contrast to the simplicity that every AST operation puts its value into %rax.
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)
