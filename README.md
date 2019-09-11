@@ -6,7 +6,7 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
 
 *gen* generates assembly (.s file) and clang converts that to binary. Eventually I'll add *bin* so I can skip clang directly.
 
-Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint & asserts), *dir* (for getting file names in a directory), *strings* (for compact storage of identifiers and pointer-comparison instead of full string-comparison)
+Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint & asserts), *dir* (for getting file names in a directory), *strings* (for compact storage of identifiers and pointer-comparison instead of full string-comparison), *interp* (an interpreter for my AST, to be used in real-time)
 
 **Never stop learning!** 
 
@@ -15,7 +15,9 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 ## Random Thoughts:
 * Lexing is compression.
 * AST is pattern matching.
-* I liked these lines from Stage 6: "an expression has a value, but a statement doesn’t" "a statement can contain other statements, but an expression can’t contain statements"
+* I liked these lines from [Stage 6](https://norasandler.com/2018/02/25/Write-a-Compiler-6.html):
+  * "an expression has a value, but a statement doesn’t"
+  * "a statement can contain other statements, but an expression can’t contain statements"
 
 ## Timeline 
 **Note: 'day' in descriptions below is more like a few hours of work**
@@ -53,6 +55,23 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Took less than a day, relatively easy addition.
   * Note that my internal stack is limited (max of 256 vars on a stack frame, max of 256 stack frames) but that's fine for now.
   * Strangely, I ignored almost everything in https://norasandler.com/2018/03/14/Write-a-Compiler-7.html -> I think it's the first time an algorithm was described in depth and honestly the algo requirements seemed really simple to me. I also totally ignored the stuff on "deallocating variables on the stack" because there's no point. It's a waste of assembly and more complicated than it needs to be. Note that my feeling here is in stark contrast to the simplicity that every AST operation puts its value into %rax.
+* 9/1/2019 - I wrote an interpreter for fun.
+  * Spent 1 day just getting raw input from user to pipe to interpreter (this time included a rabbit hole for making a imgui app to show everything).
+  * Spent 1 day making the interpreter support everything up to stage 7.
+  * Added unary|number reduction 'cause I got tired of seeing it in my AST output. It's marked as an "optimization" which is in quotes because it's more a better version of Nora's example compiler then it is an actual optimization.
+
+## Perf Status
+```
+Tests took 28893.22ms
+Perf Results (average milliseconds)
+        read file: 0.12ms
+        lex: 0.10ms
+        ast: 0.16ms
+        gen: 1.88ms <--- Big WTF. Why do I take 2ms to generate ~100bytes of asm??
+        clang: 122.65ms <--- system() to generate exe
+        compare: 221.50ms <--- 3x system() calls. (clang .c, a.exe, my.exe)
+        interp: 1.49ms <--- WOW. hmm... no clue why so slow, I should investigate.
+```
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)
@@ -60,7 +79,44 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * Update Simplify to write out original source with modifications (currently writes out using ASTNodes which elimates all user formatting)
 * ~~stringslab so I don't have to copy std::string around everywhere and so I can get back to using memset(0)~~ **see "strings.h"**
 * Try new simplify rule: Variable elimination (ex: "int main(){int a = 2;return a;}" should become "int main(){return 2;}"
-* Try adding warning for unitialized variable
+* Add warning for uninitialized variable
+* Add equivalent warnings to what Clang produces:
+```
+../stage_4/valid/and_true.c:2:14: warning: use of logical '&&' with constant operand [-Wconstant-logical-operand]
+    return 1 && -1;
+             ^  ~~
+../stage_4/valid/and_true.c:2:14: note: use '&' for a bitwise operation
+    return 1 && -1;
+             ^~
+             &
+../stage_4/valid/and_true.c:2:14: note: remove constant to silence this warning
+    return 1 && -1;
+            ~^~~~~
+1 warning generated.
+../stage_4/valid/precedence.c:2:19: warning: use of logical '&&' with constant operand [-Wconstant-logical-operand]
+    return 1 || 0 && 2;
+                  ^  ~
+../stage_4/valid/precedence.c:2:19: note: use '&' for a bitwise operation
+    return 1 || 0 && 2;
+                  ^~
+                  &
+../stage_4/valid/precedence.c:2:19: note: remove constant to silence this warning
+    return 1 || 0 && 2;
+                 ~^~~~
+1 warning generated.
+../stage_5/valid/unused_exp.c:2:7: warning: expression result unused [-Wunused-value]
+    2 + 2;
+    ~ ^ ~
+1 warning generated.
+../stage_6/valid/statement/if_nested_3.c:6:9: warning: add explicit braces to avoid dangling else [-Wdangling-else]
+        else
+        ^
+1 warning generated.
+../stage_6/valid/statement/if_nested_4.c:6:9: warning: add explicit braces to avoid dangling else [-Wdangling-else]
+        else
+        ^
+1 warning generated.
+```
 
 ## Useful links:
 * http://www.wilfred.me.uk/blog/2014/08/27/baby-steps-to-a-c-compiler/

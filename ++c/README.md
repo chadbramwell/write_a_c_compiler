@@ -13,7 +13,8 @@ However, there will be new things or more so, better defaults. I'll be modifying
 
 # ++c supported simplify rules
 These include anything wrapped in nested parenthesis because those wash out when going from tokens to AST.
-* unary(-)[number] -> number (aka token reduction, makes further reductions more obvious)
+* ~~unary(-)[number] -> number (aka token reduction, makes further reductions more obvious)~~
+  * This is now done automatically when generating AST
 * binary(+)[number,number] -> number (do the addition for the user)
 
 # ++c supported simplify rules I'm looking forward to implementing

@@ -260,5 +260,4 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		debug_break();
 		break;// detected token we don't know how to handle
 	}
-	fputc('\n', file);
 }

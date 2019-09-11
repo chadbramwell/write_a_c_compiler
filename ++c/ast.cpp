@@ -3,7 +3,7 @@
 #include "debug.h"
 
 // STAGE 5 grammar from: https://norasandler.com/2018/01/08/Write-a-Compiler-5.html
-// <program> ::= <function>
+// <program> ::= { <function> | <declaration> }
 // <function> ::= "int" <id> "(" ")" "{" { <block-item> } "}"
 // <block-item> ::= <statement> | <declaration>
 // <declaration> ::= "int" <id> [ = <exp> ] ";"
@@ -26,6 +26,7 @@
 //	- This makes it easier to move the instruction pointer during debugging and it should allow for simpler function call structure
 // GENERAL RULE FOR FUNCTIONS BELOW: assume there's at least one item in the token stream
 
+ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_block_item(TokenStream& io_tokens, std::vector<ASTError>& errors);
 ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors);
@@ -43,12 +44,51 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors);
 bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, std::vector<ASTError>& errors);
 void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason);
 
+ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors)
+{
+	// <program> ::= { <function> | <declaration> }
+	if (io_tokens.next == io_tokens.end)
+	{
+		debug_break();
+		return NULL;
+	}
+	TokenStream tokens = io_tokens;
+
+	ASTNode n;
+	n.is_program = true;
+	n.is_block_list = true;
+
+	while (tokens.next != tokens.end)
+	{
+		if (ASTNode* f = parse_function(tokens, errors))
+		{
+			n.children.push_back(f);
+			continue;
+		}
+		if (ASTNode* d = parse_declaration(tokens, errors))
+		{
+			n.children.push_back(d);
+			continue;
+		}
+		break;
+	}
+
+	// success if we parsed all tokens
+	if (tokens.next == tokens.end)
+	{
+		io_tokens = tokens;
+		return new ASTNode(n);
+	}
+
+	return NULL;
+}
+
 ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
 	// <function> ::= "int" <id> "(" ")" "{" { <block-item> } "}"
 	assert(io_tokens.next != io_tokens.end);
-
 	TokenStream tokens = io_tokens;
+
 	ASTNode n;
 	n.is_function = true;
 
@@ -781,6 +821,28 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
 		}
 		n.children.push_back(factor);
 
+		// "optimization" attempt to combine unary op with number
+		if (factor->is_number)
+		{
+			switch (n.op)
+			{
+			case '!': 
+				factor->number = !factor->number;
+				io_tokens = tokens;
+				return factor;
+			case '-':
+				factor->number = -factor->number;
+				io_tokens = tokens;
+				return factor;
+			case '~':
+				factor->number = ~factor->number;
+				io_tokens = tokens;
+				return factor;
+			}
+
+			debug_break(); // not handling all unary ops, fall through to normal route
+		}
+
 		io_tokens = tokens;
 		return new ASTNode(n);
 	}
@@ -812,31 +874,7 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 ASTNode* ast(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-	assert(io_tokens.next != io_tokens.end);
-
-	TokenStream tokens = io_tokens;
-
-	ASTNode n;
-	n.is_program = true;
-
-	while (tokens.next != tokens.end)
-	{
-		if (ASTNode* f = parse_function(tokens, errors))
-		{
-			n.children.push_back(f);
-			continue;
-		}
-		break;
-	}
-
-	// success if we parsed all tokens
-	if (tokens.next == tokens.end)
-	{
-		io_tokens = tokens;
-		return new ASTNode(n);
-	}
-
-	return NULL;
+	return parse_program(io_tokens, errors);
 }
 
 void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
@@ -848,13 +886,13 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		{
 			dump_ast(file, *self.children[i], spaces_indent + 2);
 		}
-		fprintf(file, "]==END FUNC %s\n", self.func_name.nts);
+		fprintf(file, "%*c]==END FUNC %s\n", spaces_indent, ' ', self.func_name.nts);
 		return;
 	}
 	else if (self.is_return)
 	{
 		assert(self.children.size() > 0); // not technically valid. revisit later.
-		fprintf(file, "%*cRETURN ", spaces_indent, ' ');
+		fprintf(file, "%*cRETURN\n", spaces_indent, ' ');
 		for (size_t i = 0; i < self.children.size(); ++i)
 		{
 			dump_ast(file, *self.children[i], spaces_indent + 2);
@@ -874,17 +912,15 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	else if (self.is_if)
 	{
 		assert(self.children.size() > 1); // expression, statement, (optional) else statement
-		fprintf(file, "%*cIF ", spaces_indent, ' ');
-		dump_ast(file, *self.children[0], 0);
-		fprintf(file, " -> ");
-		dump_ast(file, *self.children[1], 0);
-		fprintf(file, "\n");
+		fprintf(file, "%*cIF\n", spaces_indent, ' ');
+		dump_ast(file, *self.children[0], spaces_indent + 2);
+		fprintf(file, "%*cTHEN\n", spaces_indent, ' ');
+		dump_ast(file, *self.children[1], spaces_indent + 2);
 		if (self.children.size() > 2)
 		{
 			assert(self.children.size() == 3);
-			fprintf(file, "%*cELSE -> ", spaces_indent, ' ');
-			dump_ast(file, *self.children[2], 0);
-			fprintf(file, "\n");
+			fprintf(file, "%*cELSE\n", spaces_indent, ' ');
+			dump_ast(file, *self.children[2], spaces_indent + 2);
 		}
 		return;
 	}
@@ -904,12 +940,12 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	}
 	else if (self.is_unary_op)
 	{
-		fprintf(file, "UnOp(%c, ", self.op);
+		fprintf(file, "%*cUnOp(%c,\n", spaces_indent, ' ', self.op);
 		for (size_t i = 0; i < self.children.size(); ++i)
 		{
-			dump_ast(file, *self.children[i], 0);
+			dump_ast(file, *self.children[i], spaces_indent + 2);
 		}
-		fputc(')', file);
+		fprintf(file, "%*c)\n", spaces_indent, ' ');
 		return;
 	}
 	else if (self.is_binary_op)
@@ -944,12 +980,10 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 	{
 		assert(self.children.size() == 3);
 		fprintf(file, "%*c?:(", spaces_indent, ' ');
-		dump_ast(file, *self.children[0], 0);
-		fprintf(file, ", ");
-		dump_ast(file, *self.children[1], 0);
-		fprintf(file, ", ");
-		dump_ast(file, *self.children[2], 0);
-		fprintf(file, ")");
+		dump_ast(file, *self.children[0], spaces_indent + 2);
+		dump_ast(file, *self.children[1], spaces_indent + 2);
+		dump_ast(file, *self.children[2], spaces_indent + 2);
+		fprintf(file, ")\n");
 		return;
 	}
 	else if (self.var_name.nts)
@@ -957,7 +991,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		if (self.is_variable_declaration && self.is_variable_assignment)
 		{
 			assert(self.children.size() == 1);
-			fprintf(file, "%*cVar<%s:%s>=", spaces_indent, ' ', "INT", self.var_name.nts);
+			fprintf(file, "%*cVar<%s:%s>=\n", spaces_indent, ' ', "INT", self.var_name.nts);
 			dump_ast(file, *self.children[0], spaces_indent + 2);
 			return;
 		}
@@ -1008,6 +1042,8 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
 	{
 		switch (expected_token)
 		{
+		case '(': append_error(errors, tokens.next, "expected ("); break;
+		case ')': append_error(errors, tokens.next, "expected )"); break;
 		case ';': append_error(errors, tokens.next, "expected ;"); break;
 		case '}': append_error(errors, tokens.next, "expected }"); break;
 		default:
