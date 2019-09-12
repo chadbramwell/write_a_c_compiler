@@ -55,7 +55,7 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Took less than a day, relatively easy addition.
   * Note that my internal stack is limited (max of 256 vars on a stack frame, max of 256 stack frames) but that's fine for now.
   * Strangely, I ignored almost everything in https://norasandler.com/2018/03/14/Write-a-Compiler-7.html -> I think it's the first time an algorithm was described in depth and honestly the algo requirements seemed really simple to me. I also totally ignored the stuff on "deallocating variables on the stack" because there's no point. It's a waste of assembly and more complicated than it needs to be. Note that my feeling here is in stark contrast to the simplicity that every AST operation puts its value into %rax.
-* 9/11/2019 - I wrote an interpreter for fun.
+* 9/11/2019 - I wrote an interpreter for fun. And added perf stats to target optimizations.
   * Spent 1 day just getting raw input from user to pipe to interpreter (this time included a rabbit hole for making a imgui app to show everything).
   * Spent 1 day making the interpreter support everything up to stage 7.
   * Added unary|number reduction 'cause I got tired of seeing it in my AST output. It's marked as an "optimization" which is in quotes because it's more a better version of Nora's example compiler then it is an actual optimization.
@@ -85,6 +85,7 @@ Perf Results  [low,    high,   avg   ]
 * LEARN: compare CL/Clang/GCC optimized assembly to my generated assembly
 * Update Simplify to write out original source with modifications (currently writes out using ASTNodes which elimates all user formatting)
 * ~~stringslab so I don't have to copy std::string around everywhere and so I can get back to using memset(0)~~ **see "strings.h"**
+* Paged Allocator for ASTNodes.
 * Try new simplify rule: Variable elimination (ex: "int main(){int a = 2;return a;}" should become "int main(){return 2;}"
 * Add warning for uninitialized variable
 * Add equivalent warnings to what Clang produces:
