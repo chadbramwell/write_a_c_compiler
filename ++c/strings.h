@@ -5,7 +5,6 @@ struct str
 {
 	const char* nts;
 	int len;
-	str() : nts(0), len(0) {}
 };
 
 str strings_insert(const char* start, const char* end);

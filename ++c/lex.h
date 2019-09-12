@@ -50,12 +50,10 @@ struct Token
 	const char* start; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
 	const char* end;
 
-	str identifier; // only valid if type == eToken::identifier or one of the keywords
-	uint64_t number; // only valid if type == eToken::constant_number
-
-	explicit Token(eToken _type, const char* _start, const char* _end) 
-		: type(_type), start(_start), end(_end)
-	{}
+	union {
+		str identifier; // only valid if type == eToken::identifier or one of the keywords
+		uint64_t number; // only valid if type == eToken::constant_number
+	};
 };
 
 struct LexInput
@@ -67,10 +65,14 @@ struct LexInput
 
 struct LexOutput
 {
-	std::vector<Token> tokens;
+	static const uint8_t MAX_TOKENS = 255;
+	Token tokens[MAX_TOKENS];
+	uint8_t tokens_size;
 
 	const char* failure_location;
 	const char* failure_reason;
+
+	LexOutput() : tokens_size(0), failure_location(NULL), failure_reason(NULL) {}
 };
 
 bool lex(const LexInput& input, LexOutput& output);

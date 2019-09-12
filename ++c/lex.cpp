@@ -15,6 +15,42 @@ bool iswhitespace(char c)
 	return (c >= '\t' && c <= '\r') || c == ' ';
 }
 
+void push_1c(LexOutput* out, eToken type, const char* start)
+{
+	assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+	Token* token = &out->tokens[out->tokens_size++];
+	token->type = type;
+	token->start = start;
+	token->end = start + 1;
+}
+void push_2c(LexOutput* out, eToken type, const char* start)
+{
+	assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+	Token* token = &out->tokens[out->tokens_size++];
+	token->type = type;
+	token->start = start;
+	token->end = start + 2;
+}
+void push_num(LexOutput* out, uint64_t n, const char* start, const char* end)
+{
+	assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+	Token* token = &out->tokens[out->tokens_size++];
+	token->type = eToken::constant_number;
+	token->start = start;
+	token->end = end;
+	token->number = n;
+}
+Token* push_id(LexOutput* out, const char* start, const char* end)
+{
+	assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+	Token* token = &out->tokens[out->tokens_size++];
+	token->type = eToken::identifier;
+	token->start = start;
+	token->end = end;
+	token->identifier = strings_insert(start, end);
+	return token;
+}
+
 bool lex(const LexInput& input, LexOutput& output)
 {
 	const str strInt = strings_insert_nts("int");
@@ -36,51 +72,42 @@ bool lex(const LexInput& input, LexOutput& output)
 			continue;
 		}
 
-		// if no room token stream for a single-byte, we are done.
-		// code below assumes there's room for at least one byte.
-		if (stream >= end_stream)
-		{
-			output.failure_location = stream;
-			output.failure_reason = "[lex] no room left in output for tokens";
-			return false;
-		}
-
 		// handle two-char syntax: &&, ||, ==, !=, <=, >=
 		if (stream + 1 < end_stream)
 		{
 			if (stream[0] == '&' && stream[1] == '&')
 			{
-				output.tokens.push_back(Token(eToken::logical_and, stream, stream + 2));
+				push_2c(&output, eToken::logical_and, stream);
 				stream += 2;
 				continue;
 			}
 			if (stream[0] == '|' && stream[1] == '|')
 			{
-				output.tokens.push_back(Token(eToken::logical_or, stream, stream + 2));
+				push_2c(&output, eToken::logical_or, stream);
 				stream += 2;
 				continue;
 			}
 			if (stream[0] == '=' && stream[1] == '=')
 			{
-				output.tokens.push_back(Token(eToken::logical_equal, stream, stream + 2));
+				push_2c(&output, eToken::logical_equal, stream);
 				stream += 2;
 				continue;
 			}
 			if (stream[0] == '!' && stream[1] == '=')
 			{
-				output.tokens.push_back(Token(eToken::logical_not_equal, stream, stream + 2));
+				push_2c(&output, eToken::logical_not_equal, stream);
 				stream += 2;
 				continue;
 			}
 			if (stream[0] == '<' && stream[1] == '=')
 			{
-				output.tokens.push_back(Token(eToken::less_than_or_equal, stream, stream + 2));
+				push_2c(&output, eToken::less_than_or_equal, stream);
 				stream += 2;
 				continue;
 			}
 			if (stream[0] == '>' && stream[1] == '=')
 			{
-				output.tokens.push_back(Token(eToken::greater_than_or_equal, stream, stream + 2));
+				push_2c(&output, eToken::greater_than_or_equal, stream);
 				stream += 2;
 				continue;
 			}
@@ -90,75 +117,75 @@ bool lex(const LexInput& input, LexOutput& output)
 		switch (*stream)
 		{
 		case '!':
-			output.tokens.push_back(Token(eToken::logical_not, stream, stream+1));
+			push_1c(&output, eToken::logical_not, stream);
 			++stream;
 			continue;
 		case '&':
-			output.tokens.push_back(Token(eToken::bitwise_and, stream, stream + 1));
+			push_1c(&output, eToken::bitwise_and, stream);
 			++stream;
 			continue;
 		case '(':
-			output.tokens.push_back(Token(eToken::open_parens, stream, stream + 1));
+			push_1c(&output, eToken::open_parens, stream);
 			++stream;
 			continue;
 		case ')':
-			output.tokens.push_back(Token(eToken::closed_parens, stream, stream + 1));
+			push_1c(&output, eToken::closed_parens, stream);
 			++stream;
 			continue;
 		case '*':
-			output.tokens.push_back(Token(eToken::star, stream, stream + 1));
+			push_1c(&output, eToken::star, stream);
 			++stream;
 			continue;
 		case '+':
-			output.tokens.push_back(Token(eToken::plus, stream, stream + 1));
+			push_1c(&output, eToken::plus, stream);
 			++stream;
 			continue;
 		case '-':
-			output.tokens.push_back(Token(eToken::dash, stream, stream + 1));
+			push_1c(&output, eToken::dash, stream);
 			++stream;
 			continue;
 		case '/':
-			output.tokens.push_back(Token(eToken::forward_slash, stream, stream + 1));
+			push_1c(&output, eToken::forward_slash, stream);
 			++stream;
 			continue;
 		case ':':
-			output.tokens.push_back(Token(eToken::colon, stream, stream + 1));
+			push_1c(&output, eToken::colon, stream);
 			++stream;
 			continue;
 		case ';':
-			output.tokens.push_back(Token(eToken::semicolon, stream, stream + 1));
+			push_1c(&output, eToken::semicolon, stream);
 			++stream;
 			continue;
 		case '<':
-			output.tokens.push_back(Token(eToken::less_than, stream, stream + 1));
+			push_1c(&output, eToken::less_than, stream);
 			++stream;
 			continue;
 		case '=':
-			output.tokens.push_back(Token(eToken::assignment, stream, stream + 1));
+			push_1c(&output, eToken::assignment, stream);
 			++stream;
 			continue;
 		case '>':
-			output.tokens.push_back(Token(eToken::greater_than, stream, stream + 1));
+			push_1c(&output, eToken::greater_than, stream);
 			++stream;
 			continue;
 		case '?':
-			output.tokens.push_back(Token(eToken::question_mark, stream, stream + 1));
+			push_1c(&output, eToken::question_mark, stream);
 			++stream;
 			continue;
 		case '{':
-			output.tokens.push_back(Token(eToken::open_curly, stream, stream + 1));
+			push_1c(&output, eToken::open_curly, stream);
 			++stream;
 			continue;
 		case '|':
-			output.tokens.push_back(Token(eToken::logical_or, stream, stream + 1));
+			push_1c(&output, eToken::logical_or, stream);
 			++stream;
 			continue;
 		case '}':
-			output.tokens.push_back(Token(eToken::closed_curly, stream, stream + 1));
+			push_1c(&output, eToken::closed_curly, stream);
 			++stream;
 			continue;
 		case '~':
-			output.tokens.push_back(Token(eToken::bitwise_not, stream, stream + 1));
+			push_1c(&output, eToken::bitwise_not, stream);
 			++stream;
 			continue;
 		}
@@ -176,9 +203,7 @@ bool lex(const LexInput& input, LexOutput& output)
 				++stream;
 			}
 
-			Token token(eToken::constant_number, num_start, stream);
-			token.number = number;
-			output.tokens.push_back(token);
+			push_num(&output, number, num_start, stream);
 			continue;
 		}
 		
@@ -190,20 +215,18 @@ bool lex(const LexInput& input, LexOutput& output)
 				++token_end;
 			}
 
-			Token token(eToken::identifier, stream, token_end);
-			token.identifier = strings_insert(stream, token_end);
+			Token* token = push_id(&output, stream, token_end);
 			stream = token_end;
 
-			if (token.identifier.nts == strInt.nts)
-				token.type = eToken::keyword_int;
-			else if (token.identifier.nts == strReturn.nts)
-				token.type = eToken::keyword_return;
-			else if (token.identifier.nts == strIf.nts)
-				token.type = eToken::keyword_if;
-			else if (token.identifier.nts == strElse.nts)
-				token.type = eToken::keyword_else;
+			if (token->identifier.nts == strInt.nts)
+				token->type = eToken::keyword_int;
+			else if (token->identifier.nts == strReturn.nts)
+				token->type = eToken::keyword_return;
+			else if (token->identifier.nts == strIf.nts)
+				token->type = eToken::keyword_if;
+			else if (token->identifier.nts == strElse.nts)
+				token->type = eToken::keyword_else;
 
-			output.tokens.push_back(token);
 			continue;
 		}
 
@@ -218,9 +241,11 @@ bool lex(const LexInput& input, LexOutput& output)
 
 void dump_lex(FILE* file, const LexOutput& lex)
 {
-	for(size_t i = 0; i < lex.tokens.size(); ++i)
+	for(const Token* iter = lex.tokens; 
+		iter != (lex.tokens + lex.tokens_size);
+		++iter)
 	{
-		const Token& token = lex.tokens[i];
+		const Token& token = *iter;
 		switch (token.type)
 		{
 		case eToken::identifier:

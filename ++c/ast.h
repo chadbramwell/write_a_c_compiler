@@ -52,6 +52,8 @@ struct ASTNode
 		, is_binary_op(false)
 		, is_ternery_op(false)
 		, op(eToken::UNKNOWN)
+		, func_name({})
+		, var_name({})
 		, number(0)
 	{
 	}

@@ -54,17 +54,19 @@ bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 	return true;
 }
 
-void compare_to_clang(const char* source_path, const char* exe_path)
+int get_clang_ground_truth(const char* source_path)
 {
 	char buff[256];
 	sprintf_s(buff, "clang %s", source_path);
 	int compilation_result = system(buff);
 	assert(compilation_result == 0);
 
-	int clang_result = system("a.exe");
-	int our_result = system(exe_path);
+	int ground_truth = system("a.exe");
 
-	assert(clang_result == our_result);
+	int del_ok = system("del a.exe");
+	assert(del_ok == 0);
+
+	return ground_truth;
 }
 
 struct path
@@ -73,15 +75,16 @@ struct path
 	const char* name_start;
 	const char* name_end;
 
-	char lex_path[256];
-	char ast_path[256];
-	char asm_path[256];
-	char exe_path[256];
+	char src_path[260];
+	char lex_path[260];
+	char ast_path[260];
+	char asm_path[260];
+	char exe_path[260];
 };
 
 void path_init(path* p, const char* filename)
 {
-	*p = {};
+	memset(p, 0, sizeof(*p));
 	p->original = filename;
 
 	// find very end
@@ -104,10 +107,16 @@ void path_init(path* p, const char* filename)
 		p->name_start = end+1;
 
 	int name_no_path_len = int(p->name_end - p->original);
+	if (!get_absolute_path(p->original, &p->src_path))
+		debug_break();
 	sprintf_s(p->lex_path, "%.*s.lex.txt", name_no_path_len, p->original);
 	sprintf_s(p->ast_path, "%.*s.ast.txt", name_no_path_len, p->original);
 	sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
-	sprintf_s(p->exe_path, "%.*s.exe", name_no_path_len, p->original);
+
+	char tmp[260];
+	sprintf_s(tmp, "%.*s.exe", name_no_path_len, p->original);	
+	if (!get_absolute_path(tmp, &p->exe_path))
+		debug_break();
 }
 
 void dump(TestType tt, const char* file_path, const LexOutput& lexout, const ASTNode* root, const AsmInput& asm_in)
@@ -123,24 +132,57 @@ void dump(TestType tt, const char* file_path, const LexOutput& lexout, const AST
 
 struct perf_numbers
 {
-	float read_file;
-	float lex;
-	float ast;
-	float gen;
-	float clang;
-	float compare;
-	float interp;
+	std::vector<float> read_file;
+	std::vector<float> lex;
+	std::vector<float> ast;
+	std::vector<float> gen_asm;
+	std::vector<float> gen_exe;
+	std::vector<float> run_exe;
+	std::vector<float> ground_truth;
+	std::vector<float> interp;
 };
-void clear_perf(perf_numbers* n)
+void update_perf(std::vector<float>* p, float ms)
 {
-	memset(n, 0, sizeof(n[0]));
+	if (ms > 1000)
+		debug_break();
+	p->push_back(ms);
 }
-void update_perf(float* n, float ms)
+bool get_perf(std::vector<float>* p, float* o_min, float* o_max, float* o_avg)
 {
-	if (*n == 0.0f)
-		*n = ms;
-	else
-		*n = (*n + ms) / 2.0f;
+	float* iter = p->data();
+	float* end = p->data() + p->size();
+
+	if (iter == end)
+		return false;
+
+	float min, max, avg;
+	min = max = avg = *iter;
+
+	++iter;
+
+	for (; iter != end; ++iter)
+	{
+		avg += *iter;
+
+		if (*iter < min)
+			min = *iter;
+		if (*iter > max)
+			max = *iter;
+	}
+
+	*o_min = min;
+	*o_max = max;
+	*o_avg = avg / p->size();
+
+	return true;
+}
+void print_perf(std::vector<float>* p, const char* preamble, const char* postamble)
+{
+	float min, max, avg;
+	if (!get_perf(p, &min, &max, &avg))
+		return;
+
+	printf("%s[%.2fms, %.2fms, %.2fms]%s", preamble, min, max, avg, postamble);
 }
 
 void Test(TestType tt, perf_numbers* perf, const char* directory)
@@ -188,6 +230,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			continue;
 		}
 		timer.end();
+		if (timer.milliseconds() > 0.1f) debug_break();
 		update_perf(&perf->lex, timer.milliseconds());
 
 		////// AST
@@ -197,8 +240,8 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			continue;
 		}
 		TokenStream ast_in;
-		ast_in.next = lexout.tokens.data();
-		ast_in.end = lexout.tokens.data() + lexout.tokens.size();
+		ast_in.next = lexout.tokens;
+		ast_in.end = lexout.tokens + lexout.tokens_size;
 
 		std::vector<ASTError> errors;
 		timer.start();
@@ -220,6 +263,15 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			dump(tt, file_path, lexout, root, asm_in);
 			continue;
 		}
+
+		// Calc Ground Truth
+		// - clang *.c
+		// - run clangs' output: a.exe, and return result
+		timer.start();
+		int clang_ground_truth = get_clang_ground_truth(file_path);
+		timer.end();
+		update_perf(&perf->ground_truth, timer.milliseconds());
+		//printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
 
 		///// ASM
 		if((tt & TEST_GEN) == TEST_GEN)
@@ -259,7 +311,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 					continue;
 				}
 				timer.end();
-				update_perf(&perf->gen, timer.milliseconds());
+				update_perf(&perf->gen_asm, timer.milliseconds());
 
 				fclose(file);
 			}
@@ -277,12 +329,13 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 				continue;
 			}
 			timer.end();
-			update_perf(&perf->clang, timer.milliseconds());
+			update_perf(&perf->gen_exe, timer.milliseconds());
 
 			timer.start();
-			compare_to_clang(file_path, exe_file_path);
+			int our_result = system(exe_file_path);
+			assert(clang_ground_truth == our_result);
 			timer.end();
-			update_perf(&perf->compare, timer.milliseconds());
+			update_perf(&perf->run_exe, timer.milliseconds());
 
 			dump(tt, file_path, lexout, root, asm_in);
 			continue;
@@ -300,14 +353,24 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 		{
 			int interp_result;
 			timer.start();
-			if (interp_return_value(root, &interp_result))
+			if (!interp_return_value(root, &interp_result))
 			{
-				printf("Interp [%s] Success! Returned: %d\n", file_path, interp_result);
-				timer.end();
-				update_perf(&perf->interp, timer.milliseconds());
-			}
-			else
+				debug_break();
 				printf("Interp failed for [%s].\n", file_path);
+				continue;
+			}
+			timer.end();
+			update_perf(&perf->interp, timer.milliseconds());
+
+			if (interp_result != clang_ground_truth)
+			{
+				printf("Interp result of [%s] does not match ground truth!\nReturned: %d vs Ground Truth: %d\n", 
+					file_path, interp_result, clang_ground_truth);
+				fprintf(stdout, "===RAW FILE [%s]===\n", lexin.filename);
+				fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
+				fprintf(stdout, "\n===END RAW FILE===\n");
+				debug_break();
+			}
 			continue;
 		}
 
@@ -319,7 +382,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 	case TEST_GEN: printf("LEX, AST, and GEN/CLANG"); break;
 	case TEST_AST: printf("LEX, AST"); break;
 	case TEST_LEX: printf("LEX"); break;
-	case TEST_INTERP: printf("INTERPRETOR"); break;
+	case TEST_INTERP: printf("INTERPRETER"); break;
 	default:
 		debug_break();
 		printf("???[%s]:", directory);
@@ -346,8 +409,8 @@ void test_simplify(const LexInput& lexin)
 		return;
 
 	TokenStream tokens;
-	tokens.next = lexout.tokens.data();
-	tokens.end = tokens.next + lexout.tokens.size();
+	tokens.next = lexout.tokens;
+	tokens.end = lexout.tokens + lexout.tokens_size;
 
 	std::vector<ASTError> errors;
 	ASTNode* original = ast(tokens, errors);
@@ -422,7 +485,8 @@ void interpreter_practice()
 	char end_string[32];
 	fgets(end_string, 32, stdin);
 	end_string[strlen(end_string) - 1] = 0; //string newline at end
-	printf("waiting for [%s]. type whatever you want and then type [%s] to compile and run your code.\n", end_string, end_string);
+	printf("waiting for [%s]. type whatever you want and then type [%s] to compile and run your code.\n", 
+		end_string, end_string);
 
 	char buffer[1024];
 	char* buffer_end = buffer + _countof(buffer);
@@ -461,8 +525,8 @@ void interpreter_practice()
 	}
 
 	TokenStream tokens;
-	tokens.next = lexout.tokens.data();
-	tokens.end = lexout.tokens.data() + lexout.tokens.size();
+	tokens.next = lexout.tokens;
+	tokens.end = lexout.tokens + lexout.tokens_size;
 	std::vector<ASTError> errors;
 	ASTNode* root = ast(tokens, errors);
 	if(!root)
@@ -498,7 +562,6 @@ int main(int argc, char** argv)
 			continue;
 
 		perf_numbers perf;
-		clear_perf(&perf);
 		
 		Timer timer;
 		timer.start();
@@ -512,7 +575,15 @@ int main(int argc, char** argv)
 		Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
 		Test(TEST_LEX, &perf, "../stage_7/invalid/");
 
-		clear_perf(&perf); // above includes invalid files. I don't want those to lower the avg perf of lexing
+		Test(TEST_LEX, &perf, "../stage_1/valid/");
+		Test(TEST_LEX, &perf, "../stage_2/valid/");
+		Test(TEST_LEX, &perf, "../stage_3/valid/");
+		Test(TEST_LEX, &perf, "../stage_4/valid/");
+		Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
+		Test(TEST_LEX, &perf, "../stage_5/valid/");
+		Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
+		Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
+		Test(TEST_LEX, &perf, "../stage_7/valid/");
 
 		Test(TEST_INTERP, &perf, "../stage_1/valid/");
 		Test(TEST_INTERP, &perf, "../stage_2/valid/");
@@ -537,21 +608,15 @@ int main(int argc, char** argv)
 		timer.end();
 		printf("Tests took %.2fms\n", timer.milliseconds());
 
-		printf("Perf Results (average milliseconds)\n"
-			"\tread file: %.2fms\n"
-			"\tlex: %.2fms\n"
-			"\tast: %.2fms\n"
-			"\tgen: %.2fms\n"
-			"\tclang: %.2fms\n"
-			"\tcompare: %.2fms\n"
-			"\tinterp: %.2fms\n",
-			perf.read_file,
-			perf.lex,
-			perf.ast,
-			perf.gen,
-			perf.clang,
-			perf.compare,
-			perf.interp);
+		printf(							"Perf Results  [low,    high,   avg   ]\n");
+		print_perf(&perf.read_file,		"  read_file:  ", "\n");
+		print_perf(&perf.lex,			"  lex:        ", "\n");
+		print_perf(&perf.ast,			"  ast:        ", "\n");
+		print_perf(&perf.gen_asm,		"  gen_asm:    ", "\n");
+		print_perf(&perf.gen_exe,		"  gen_exe:    ", "\n");
+		print_perf(&perf.run_exe,		"  run_exe:    ", "\n");
+		print_perf(&perf.ground_truth,	"  grnd_truth: ", "\n");
+		print_perf(&perf.interp,		"  interp:     ", "\n");
 
 		//test_simplify_double_negative();
 		//test_simplify_1_plus_2();
@@ -586,6 +651,13 @@ int main(int argc, char** argv)
 				debug_print = true;
 				debug_print_timers = true;
 			}
+		}
+
+		if (debug_print)
+		{
+			fprintf(stdout, "===RAW FILE [%s]===\n", lex_in.filename);
+			fwrite(lex_in.stream, 1, (size_t)lex_in.length, stdout);
+			fprintf(stdout, "\n===END RAW FILE===\n");
 		}
 	}
 	else
@@ -629,8 +701,8 @@ int main(int argc, char** argv)
 	}
 
 	TokenStream ast_in;
-	ast_in.next = lex_out.tokens.data();
-	ast_in.end = lex_out.tokens.data() + lex_out.tokens.size();
+	ast_in.next = lex_out.tokens;
+	ast_in.end = lex_out.tokens + lex_out.tokens_size;
 
 	std::vector<ASTError> errors;
 	ASTNode* root = ast(ast_in, errors);
@@ -654,6 +726,19 @@ int main(int argc, char** argv)
 			dump_ast(file, *root, 0);
 			fclose(file);
 		}
+	}
+
+	const int ground_truth = get_clang_ground_truth(p.src_path);
+
+	int interp_result;
+	if (!interp_return_value(root, &interp_result))
+	{
+		fprintf(stdout, "Interpreter failed.\n");
+	}
+	if (interp_result != ground_truth)
+	{
+		fprintf(stdout, "Interpreter result %d does not match ground truth result %d\n", interp_result, ground_truth);
+		debug_break();
 	}
 
 	AsmInput asm_in;
@@ -718,12 +803,9 @@ int main(int argc, char** argv)
 		debug_break();
 	else
 	{
-		char source_path[260];
-		char exe_path[260];
-		bool ok = get_absolute_path(p.original, &source_path);
-		ok &= get_absolute_path(p.exe_path, &exe_path);
-		assert(ok);
-		compare_to_clang(source_path, exe_path);
+		int our_result = system(p.exe_path);
+		assert(our_result == ground_truth);
+		printf("Our Result: %d\nGround Truth Result: %d\n", our_result, ground_truth);
 	}
 	return clang_error;
 }

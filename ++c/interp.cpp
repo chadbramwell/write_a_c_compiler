@@ -16,6 +16,8 @@ struct interp_context
 {
 	stack_var stack[256]; // uses sentinal values for stack frames
 	int stack_top;
+
+	bool return_triggered;
 };
 
 bool push_frame(interp_context* ctx)
@@ -130,6 +132,27 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 	{
 		if (root->children.size() != 2) RETURN_INTERP_FAILURE;
 
+		// || and && are special in C. They short-circuit evaluation.
+		// * If left-side of || is true, right-side should NOT be evaluated.
+		// * If left-side of && is false, right-side should NOT be evaluated.
+		if (root->op == eToken::logical_or)
+		{
+			if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (*out_result) return true;
+			if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (*out_result) *out_result = 1; // convert whatever the value of out_result is (could be -1 or whatever) to 1
+			return true;
+		}
+		if (root->op == eToken::logical_and)
+		{
+			if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (!*out_result) return true;
+			if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (*out_result) *out_result = 1; // convert whatever the value of out_result is (could be -1 or whatever) to 1
+			return true;
+		}
+
+
 		int lhs, rhs;
 		if (!interp(root->children[0], ctx, &lhs) || !interp(root->children[1], ctx, &rhs)) RETURN_INTERP_FAILURE;
 
@@ -141,8 +164,8 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		case '/': *out_result = lhs / rhs; return true;
 		case '<': *out_result = lhs < rhs; return true;
 		case '>': *out_result = lhs > rhs; return true;
-		case eToken::logical_and:			*out_result = lhs && rhs; return true;
-		case eToken::logical_or:			*out_result = lhs || rhs; return true;
+		case eToken::logical_and: RETURN_INTERP_FAILURE; // never should have gotten here. See special cases above.
+		case eToken::logical_or: RETURN_INTERP_FAILURE; //never should have gotten here. See special cases above.
 		case eToken::logical_equal:			*out_result = lhs == rhs; return true;
 		case eToken::logical_not_equal:		*out_result = lhs != rhs; return true;
 		case eToken::less_than_or_equal:	*out_result = lhs <= rhs; return true;
@@ -215,7 +238,12 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 	{
 		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
-		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+		for (size_t i = 0; i < root->children.size(); ++i)
+		{
+			if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (ctx->return_triggered)
+				break;
+		}
 		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 		return true;
 	}
@@ -224,10 +252,22 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		assert(root->children.size() != 0); // This should've been caught in "if(root->is_function)"
 		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
 		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+		ctx->return_triggered = true;
 		return true;
 	}
 	if (root->is_function)
 	{
+		assert(ctx->return_triggered == false);
+		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
+		for (size_t i = 0; i < root->children.size(); ++i)
+		{
+			if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (ctx->return_triggered)
+				break;
+		}
+		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
+
+		// HANDLE SPECIAL CASE: C standard says if main() does not have a return than it should return 0
 		if (root->children.size() == 0)
 		{
 			if (root->func_name.nts == strings_insert_nts("main").nts)
@@ -240,14 +280,6 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 			RETURN_INTERP_FAILURE;
 		}
 
-		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;		
-
-		for (size_t i = 0; i < root->children.size(); ++i)
-		{
-			if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
-		}		
-
-		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 		return true;
 	}
 	if (root->is_program)
@@ -264,6 +296,7 @@ bool interp_return_value(ASTNode* root, int* out_result)
 {
 	interp_context ctx;
 	ctx.stack_top = 0;
+	ctx.return_triggered = false;
 
 	return interp(root, &ctx, out_result);
 }

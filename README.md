@@ -55,22 +55,29 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Took less than a day, relatively easy addition.
   * Note that my internal stack is limited (max of 256 vars on a stack frame, max of 256 stack frames) but that's fine for now.
   * Strangely, I ignored almost everything in https://norasandler.com/2018/03/14/Write-a-Compiler-7.html -> I think it's the first time an algorithm was described in depth and honestly the algo requirements seemed really simple to me. I also totally ignored the stuff on "deallocating variables on the stack" because there's no point. It's a waste of assembly and more complicated than it needs to be. Note that my feeling here is in stark contrast to the simplicity that every AST operation puts its value into %rax.
-* 9/1/2019 - I wrote an interpreter for fun.
+* 9/11/2019 - I wrote an interpreter for fun.
   * Spent 1 day just getting raw input from user to pipe to interpreter (this time included a rabbit hole for making a imgui app to show everything).
   * Spent 1 day making the interpreter support everything up to stage 7.
   * Added unary|number reduction 'cause I got tired of seeing it in my AST output. It's marked as an "optimization" which is in quotes because it's more a better version of Nora's example compiler then it is an actual optimization.
+  * Spent 1 day adding perf stats and optimizing lex (mostly by eliminating C++ stuff - hidden ctor/dtors and memory allocations from std::vector)
 
-## Perf Status
+## Performance Status
+A lot of work to be done optimizing. Some info: 
+* [ast] allocates willy-nilly. 
+* [gen]/[interp] do naive searches on stack frame. 
+* [clang] does a system call to clang (not sure if slowness if from system() or clang itself)
+* [compare] similar boat to [clang] but does 3 system() calls. (clang .c, a.exe, my.exe)
 ```
-Tests took 28893.22ms
-Perf Results (average milliseconds)
-        read file: 0.12ms
-        lex: 0.10ms
-        ast: 0.16ms
-        gen: 1.88ms <--- Big WTF. Why do I take 2ms to generate ~100bytes of asm??
-        clang: 122.65ms <--- system() to generate exe
-        compare: 221.50ms <--- 3x system() calls. (clang .c, a.exe, my.exe)
-        interp: 1.49ms <--- WOW. hmm... no clue why so slow, I should investigate.
+Tests took 49773.24ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.06ms, 0.40ms, 0.11ms]
+  lex:        [0.00ms, 0.03ms, 0.01ms]
+  ast:        [0.02ms, 0.30ms, 0.09ms]
+  gen_asm:    [0.05ms, 0.34ms, 0.08ms]
+  gen_exe:    [121.03ms, 191.02ms, 134.48ms]
+  run_exe:    [49.79ms, 84.86ms, 55.44ms]
+  grnd_truth: [189.87ms, 447.82ms, 210.55ms]
+  interp:     [0.00ms, 0.02ms, 0.01ms]
 ```
 
 ## TODO (other than Stages)
