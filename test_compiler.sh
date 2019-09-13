@@ -123,7 +123,7 @@ test_stage () {
             test_success
         fi
     done
-    echo "===================Stage $1 Summary================="
+    echo "===================Stage $1 Summary=================="
     printf "%d successes, %d failures\n" $success $fail
     ((success_total=success_total+success))
     ((failure_total=failure_total + fail))

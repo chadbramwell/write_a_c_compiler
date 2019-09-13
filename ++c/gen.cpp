@@ -204,7 +204,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 				debug_break();
 				return false;
 			}
-			fprintf(ctx->out, "  sub $8, %%rsp\n");
+			fprintf(ctx->out, "  sub $8, %%rsp #make room for %s\n", n->var_name.nts);
 		}
 
 		if (n->is_variable_assignment)
@@ -229,14 +229,14 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			uint64_t stack_offset = get_stack_offset(ctx, n->var_name);
 			if (!stack_offset)
 				return false;
-			fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp)\n", stack_offset);
+			fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var_name.nts);
 			return true;
 		}
 
 		if (n->is_variable_usage)
 		{
 			assert(n->children.size() == 0);
-			fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax\n", get_stack_offset(ctx, n->var_name));
+			fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var_name), n->var_name.nts);
 			return true;
 		}
 		
@@ -255,6 +255,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		char label_end[32];
 		sprintf_s(label_end, "fi_%" PRIu64, ctx->label_index++);
 
+		fprintf(ctx->out, "# if\n");
 		if (!gen_asm_node(ctx, n->children[0])) // if conditional expression
 			return false;
 		fprintf(ctx->out, "  cmp $0, %%rax\n");
@@ -266,6 +267,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		}
 		else
 		{
+			fprintf(ctx->out, "# else\n");
 			fprintf(ctx->out, "  je %s\n", label_else);
 			if (!gen_asm_node(ctx, n->children[1])) // if statement
 				return false;
@@ -320,27 +322,130 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		// init
 		if (!gen_asm_node(ctx, n->children[0]))
 			return false;
-		fprintf(ctx->out, "  jmp %s\n", label_for_cond);
-
-		// update, jump here at end of body or on continue
-		fprintf(ctx->out, "%s:\n", label_for_update);
-		if (!gen_asm_node(ctx, n->children[2]))
-			return false;
 
 		// condition
 		fprintf(ctx->out, "%s:\n", label_for_cond);
-		if (!gen_asm_node(ctx, n->children[1]))
-			return false;
-		fprintf(ctx->out, "  cmp $0, %%rax\n");
-		fprintf(ctx->out, "  je %s\n", label_for_end);
+		if (!n->children[1]->is_empty)
+		{
+			if (!gen_asm_node(ctx, n->children[1]))
+				return false;
+			fprintf(ctx->out, "  cmp $0, %%rax\n");
+			fprintf(ctx->out, "  je %s\n", label_for_end);
+		}
 		
 		// body
 		if (!gen_asm_node(ctx, n->children[3]))
 			return false;
-		fprintf(ctx->out, "  jmp %s\n", label_for_update);
+
+		// update - rool into from body or jump on continue
+		fprintf(ctx->out, "%s:\n", label_for_update);
+		if (!gen_asm_node(ctx, n->children[2]))
+			return false;
+		fprintf(ctx->out, "  jmp %s\n", label_for_cond);
 
 		// end, jump here on break or return
 		fprintf(ctx->out, "%s:\n", label_for_end);
+
+		ok = pop_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		ctx->loop_labels.pop_back();
+
+		return true;
+	}
+
+	if (n->is_while)
+	{
+		assert(n->children.size() == 2);
+
+		char label_while[32];
+		sprintf_s(label_while, "while_%" PRIu64, ctx->label_index++);
+		char label_while_end[32];
+		sprintf_s(label_while_end, "while_end_%" PRIu64, ctx->label_index++);
+
+		loop_label ll;
+		ll.end_label = label_while_end;
+		ll.update_label = label_while;
+		ctx->loop_labels.push_back(ll);
+
+		bool ok = push_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		// condition - jump here at end of body or on continue
+		fprintf(ctx->out, "%s:\n", label_while);
+		if (!gen_asm_node(ctx, n->children[0]))
+			return false;
+		fprintf(ctx->out, "  cmp $0, %%rax\n");
+		fprintf(ctx->out, "  je %s\n", label_while_end);
+		
+		// body
+		if (!gen_asm_node(ctx, n->children[1]))
+			return false;
+		fprintf(ctx->out, "  jmp %s\n", label_while); // after body, return to start
+
+		// end, jump here on break or return
+		fprintf(ctx->out, "%s:\n", label_while_end);
+
+		ok = pop_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		ctx->loop_labels.pop_back();
+
+		return true;
+	}
+
+	if (n->is_do_while)
+	{
+		assert(n->children.size() == 2);
+
+		char label_do_while_start[32];
+		sprintf_s(label_do_while_start, "do_while_start_%" PRIu64, ctx->label_index++);
+		char label_update_do_while[32];
+		sprintf_s(label_update_do_while, "do_while_%" PRIu64, ctx->label_index++);
+		char label_do_while_end[32];
+		sprintf_s(label_do_while_end, "do_while_end_%" PRIu64, ctx->label_index++);
+
+		loop_label ll;
+		ll.end_label = label_do_while_end;
+		ll.update_label = label_update_do_while;
+		ctx->loop_labels.push_back(ll);
+
+		bool ok = push_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		// loop start - jump here after checking condition
+		fprintf(ctx->out, "%s:\n", label_do_while_start);
+
+		// body
+		if (!gen_asm_node(ctx, n->children[0]))
+			return false;
+
+		// condition - jump here on continue
+		fprintf(ctx->out, "%s:\n", label_update_do_while);
+		if (!gen_asm_node(ctx, n->children[1]))
+			return false;
+		fprintf(ctx->out, "  cmp $0, %%rax\n");
+		fprintf(ctx->out, "  je %s\n", label_do_while_end);
+		fprintf(ctx->out, "  jmp %s\n", label_do_while_start);
+
+		// end, jump here on break or return
+		fprintf(ctx->out, "%s:\n", label_do_while_end);
 
 		ok = pop_stack_frame(ctx);
 		if (!ok)

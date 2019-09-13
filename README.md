@@ -64,6 +64,14 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Spent 1 day.
   * Added support for mod (%). Interp works for %, for, while, and do-while loops. Gen just about done.
   * Stage 8 is the first stage where I've deviated from grammer tree == ast function graph. Well, I've never liked this approach anyways so... :P
+* 9/13/2019 - **STAGE 8 TESTS PASS!**
+  * Took about a "day."
+  * We support for, while, and do-while looping! (as well as break/continue/return inside them!)
+  * I'm really starting to hate my code. It might be about time for a refactor.
+  * Things that have bit me that need to change:
+    * assumed order of parameters from AST to GEN/INTERP. This mostly came into play when writing the code for a new section by copying and pasting another section. (ex: while vs do-while. swapped condition and body but forgot to swap indicies into array)
+    * ASM generated is really verbose and wasteful. I should take a hard look at redoing this generation. The output of the simplified "use rax for everything" has been frustrating to read the asm when I have bugs.
+    * AST Nodes are simply new'ed and never tracked/freed. This could be faster and easier to reclaim memory if I wrote a slab allocator. I also setup nodes on the stack prior to copying to a new'ed chunk of memory with the (most likely misguided) thinking that stack + copying would be faster than allocating and writing to.
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -71,6 +79,8 @@ A lot of work to be done optimizing. Some info:
 * [gen]/[interp] do naive searches on stack frame. 
 * [clang] does a system call to clang (not sure if slowness if from system() or clang itself)
 * [compare] similar boat to [clang] but does 3 system() calls. (clang .c, a.exe, my.exe)
+
+with STAGE 7 (9/11/2019):
 ```
 Tests took 49773.24ms
 Perf Results  [low,    high,   avg   ]
@@ -82,6 +92,19 @@ Perf Results  [low,    high,   avg   ]
   run_exe:    [49.79ms, 84.86ms, 55.44ms]
   grnd_truth: [189.87ms, 447.82ms, 210.55ms]
   interp:     [0.00ms, 0.02ms, 0.01ms]
+```
+with STAGE 8 (9/13/2019):
+```
+Tests took 55717.29ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.06ms, 0.28ms, 0.10ms]
+  lex:        [0.00ms, 0.02ms, 0.01ms]
+  ast:        [0.02ms, 0.34ms, 0.11ms]
+  gen_asm:    [0.05ms, 0.38ms, 0.10ms]
+  gen_exe:    [113.70ms, 141.73ms, 121.99ms]
+  run_exe:    [46.35ms, 78.04ms, 51.27ms]
+  grnd_truth: [182.44ms, 804.20ms, 201.87ms]
+  interp:     [0.00ms, 0.74ms, 0.03ms]
 ```
 
 ## TODO (other than Stages)

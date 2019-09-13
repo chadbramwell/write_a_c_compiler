@@ -16,9 +16,9 @@ enum TestType : uint8_t
 	TEST_AST				= 0b00000011,
 	TEST_GEN				= 0b00000111,
 	TEST_SIMPLIFY			= 0b00001011, //no GEN
-	TEST_INTERP				= 0b10010011, //no GEN
+	TEST_INTERP				= 0b00010011, //no GEN
 
-	TEST_DUMP_ON_SUCCESS	= 0b10000000,
+	TEST_DUMP_ON			= 0b10000000,
 };
 
 bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
@@ -119,9 +119,9 @@ void path_init(path* p, const char* filename)
 		debug_break();
 }
 
-void dump(TestType tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
+void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
 {
-	if (tt & TEST_DUMP_ON_SUCCESS)
+	if (tt & TEST_DUMP_ON)
 	{
 		printf("===RAW FILE [%s]===\n", lexin.filename);
 		fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
@@ -129,7 +129,11 @@ void dump(TestType tt, const LexInput& lexin, const LexOutput& lexout, const AST
 		if ((tt & TEST_LEX) == TEST_LEX) {
 			printf("LEX:"); dump_lex(stdout, lexout); printf("\n");
 		}
-		if((tt & TEST_AST) == TEST_AST) dump_ast(stdout, *root, 0);
+		if ((tt & TEST_AST) == TEST_AST)
+		{
+			dump_ast(stdout, *root, 0);
+			//dump_ast_errors(stdout, )
+		}
 		if((tt & TEST_GEN) == TEST_GEN) gen_asm(stdout, *asm_in);
 	}
 }
@@ -333,8 +337,13 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 
 			timer.start();
 			int our_result = system(exe_file_path);
-			assert(clang_ground_truth == our_result);
 			timer.end();
+			if (clang_ground_truth != our_result)
+			{
+				dump(tt | TEST_DUMP_ON, lexin, lexout, root, &asm_in);
+				printf("Ground Truth %d does not match our result %d\n", clang_ground_truth, our_result);
+				debug_break();
+			}
 			update_perf(&perf->run_exe, timer.milliseconds());
 
 			dump(tt, lexin, lexout, root, &asm_in);
@@ -366,7 +375,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			{
 				printf("Interp result of [%s] does not match ground truth!\nReturned: %d vs Ground Truth: %d\n", 
 					file_path, interp_result, clang_ground_truth);
-				dump(tt, lexin, lexout, root, NULL);
+				dump(tt | TEST_DUMP_ON, lexin, lexout, root, NULL);
 				debug_break();
 			}
 			continue;
@@ -564,48 +573,48 @@ int main(int argc, char** argv)
 		Timer timer;
 		timer.start();
 
-		//Test(TEST_LEX, &perf, "../stage_1/invalid/");
-		//Test(TEST_LEX, &perf, "../stage_2/invalid/");
-		//Test(TEST_LEX, &perf, "../stage_3/invalid/");
-		//Test(TEST_LEX, &perf, "../stage_4/invalid/");
-		//Test(TEST_LEX, &perf, "../stage_5/invalid/");
-		//Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
-		//Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
-		//Test(TEST_LEX, &perf, "../stage_7/invalid/");
+		Test(TEST_LEX, &perf, "../stage_1/invalid/");
+		Test(TEST_LEX, &perf, "../stage_2/invalid/");
+		Test(TEST_LEX, &perf, "../stage_3/invalid/");
+		Test(TEST_LEX, &perf, "../stage_4/invalid/");
+		Test(TEST_LEX, &perf, "../stage_5/invalid/");
+		Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
+		Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
+		Test(TEST_LEX, &perf, "../stage_7/invalid/");
 		Test(TEST_LEX, &perf, "../stage_8/invalid/");
 
-		//Test(TEST_LEX, &perf, "../stage_1/valid/");
-		//Test(TEST_LEX, &perf, "../stage_2/valid/");
-		//Test(TEST_LEX, &perf, "../stage_3/valid/");
-		//Test(TEST_LEX, &perf, "../stage_4/valid/");
-		//Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
-		//Test(TEST_LEX, &perf, "../stage_5/valid/");
-		//Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
-		//Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
-		//Test(TEST_LEX, &perf, "../stage_7/valid/");
+		Test(TEST_LEX, &perf, "../stage_1/valid/");
+		Test(TEST_LEX, &perf, "../stage_2/valid/");
+		Test(TEST_LEX, &perf, "../stage_3/valid/");
+		Test(TEST_LEX, &perf, "../stage_4/valid/");
+		Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
+		Test(TEST_LEX, &perf, "../stage_5/valid/");
+		Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
+		Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
+		Test(TEST_LEX, &perf, "../stage_7/valid/");
 		Test(TEST_LEX, &perf, "../stage_8/valid/");
 
-		//Test(TEST_INTERP, &perf, "../stage_1/valid/");
-		//Test(TEST_INTERP, &perf, "../stage_2/valid/");
-		//Test(TEST_INTERP, &perf, "../stage_3/valid/");
-		//Test(TEST_INTERP, &perf, "../stage_4/valid/");
-		//Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
-		//Test(TEST_INTERP, &perf, "../stage_5/valid/");
-		//Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
-		//Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
-		//Test(TEST_INTERP, &perf, "../stage_7/valid/");
+		Test(TEST_INTERP, &perf, "../stage_1/valid/");
+		Test(TEST_INTERP, &perf, "../stage_2/valid/");
+		Test(TEST_INTERP, &perf, "../stage_3/valid/");
+		Test(TEST_INTERP, &perf, "../stage_4/valid/");
+		Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
+		Test(TEST_INTERP, &perf, "../stage_5/valid/");
+		Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
+		Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
+		Test(TEST_INTERP, &perf, "../stage_7/valid/");
 		Test(TEST_INTERP, &perf, "../stage_8/valid/");
 
 
-		//Test(TEST_GEN, &perf, "../stage_1/valid/");
-		//Test(TEST_GEN, &perf, "../stage_2/valid/");
-		//Test(TEST_GEN, &perf, "../stage_3/valid/");
-		//Test(TEST_GEN, &perf, "../stage_4/valid/");
-		//Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
-		//Test(TEST_GEN, &perf, "../stage_5/valid/");
-		//Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
-		//Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
-		//Test(TEST_GEN, &perf, "../stage_7/valid/");
+		Test(TEST_GEN, &perf, "../stage_1/valid/");
+		Test(TEST_GEN, &perf, "../stage_2/valid/");
+		Test(TEST_GEN, &perf, "../stage_3/valid/");
+		Test(TEST_GEN, &perf, "../stage_4/valid/");
+		Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
+		Test(TEST_GEN, &perf, "../stage_5/valid/");
+		Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
+		Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
+		Test(TEST_GEN, &perf, "../stage_7/valid/");
 		Test(TEST_GEN, &perf, "../stage_8/valid/");
 
 		timer.end();
@@ -808,7 +817,7 @@ int main(int argc, char** argv)
 	{
 		int our_result = system(p.exe_path);
 		assert(our_result == ground_truth);
-		printf("Our Result: %d\nGround Truth Result: %d\n", our_result, ground_truth);
+		if(debug_print) printf("Our Result: %d\nGround Truth Result: %d\n", our_result, ground_truth);
 	}
 	return clang_error;
 }

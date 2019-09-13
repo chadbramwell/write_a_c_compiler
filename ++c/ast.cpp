@@ -1234,6 +1234,26 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		dump_ast(file, *self.children[3], spaces_indent + 2);
 		return;
 	}
+	else if (self.is_while)
+	{
+		assert(self.children.size() == 2);
+		fprintf(file, "%*cWHILE(\n", spaces_indent, ' ');
+		dump_ast(file, *self.children[0], spaces_indent + 2);
+		dump_ast(file, *self.children[1], spaces_indent + 2);
+		fprintf(file, "%*c)\n", spaces_indent, ' ');
+		return;
+	}
+	else if (self.is_do_while)
+	{
+		assert(self.children.size() == 2);
+		assert(self.children.size() == 2);
+		fprintf(file, "%*cDO(\n", spaces_indent, ' ');
+		dump_ast(file, *self.children[0], spaces_indent + 2);
+		fprintf(file, "%*cWHILE\n", spaces_indent, ' ');
+		dump_ast(file, *self.children[1], spaces_indent + 2);
+		fprintf(file, "%*c)\n", spaces_indent, ' ');
+		return;
+	}
 	else if (self.is_number)
 	{
 		assert(self.children.size() == 0);
