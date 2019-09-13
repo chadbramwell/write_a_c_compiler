@@ -16,7 +16,7 @@ enum TestType : uint8_t
 	TEST_AST				= 0b00000011,
 	TEST_GEN				= 0b00000111,
 	TEST_SIMPLIFY			= 0b00001011, //no GEN
-	TEST_INTERP				= 0b00010011, //no GEN
+	TEST_INTERP				= 0b10010011, //no GEN
 
 	TEST_DUMP_ON_SUCCESS	= 0b10000000,
 };
@@ -119,14 +119,18 @@ void path_init(path* p, const char* filename)
 		debug_break();
 }
 
-void dump(TestType tt, const char* file_path, const LexOutput& lexout, const ASTNode* root, const AsmInput& asm_in)
+void dump(TestType tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
 {
 	if (tt & TEST_DUMP_ON_SUCCESS)
 	{
-		printf("===%s===\n", file_path);
-		if(tt & TEST_LEX) dump_lex(stdout, lexout);
-		if(tt & TEST_AST) dump_ast(stdout, *root, 0);
-		if(tt & TEST_GEN) gen_asm(stdout, asm_in);
+		printf("===RAW FILE [%s]===\n", lexin.filename);
+		fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
+		printf("\n===END RAW FILE===\n");
+		if ((tt & TEST_LEX) == TEST_LEX) {
+			printf("LEX:"); dump_lex(stdout, lexout); printf("\n");
+		}
+		if((tt & TEST_AST) == TEST_AST) dump_ast(stdout, *root, 0);
+		if((tt & TEST_GEN) == TEST_GEN) gen_asm(stdout, *asm_in);
 	}
 }
 
@@ -143,8 +147,6 @@ struct perf_numbers
 };
 void update_perf(std::vector<float>* p, float ms)
 {
-	if (ms > 1000)
-		debug_break();
 	p->push_back(ms);
 }
 bool get_perf(std::vector<float>* p, float* o_min, float* o_max, float* o_avg)
@@ -202,8 +204,6 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 		++test_count;
 
 		const char* file_path = dfpath(dir);
-		ASTNode* root = NULL;
-		AsmInput asm_in;
 
 		///// LEX
 		LexInput lexin;
@@ -230,13 +230,12 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			continue;
 		}
 		timer.end();
-		if (timer.milliseconds() > 0.1f) debug_break();
 		update_perf(&perf->lex, timer.milliseconds());
 
 		////// AST
 		if ((tt & TEST_AST) != TEST_AST)
 		{
-			dump(tt, file_path, lexout, root, asm_in);
+			dump(tt, lexin, lexout, NULL, NULL);
 			continue;
 		}
 		TokenStream ast_in;
@@ -245,7 +244,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 
 		std::vector<ASTError> errors;
 		timer.start();
-		root = ast(ast_in, errors);
+		ASTNode* root = ast(ast_in, errors);
 		if (!root)
 		{
 			printf("failed to ast file %s\n", file_path);
@@ -260,7 +259,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 		// From here on, our tests diverge. If we only wanted to TEST_AST, exit now.
 		if ((tt ^ TEST_AST) == 0)
 		{
-			dump(tt, file_path, lexout, root, asm_in);
+			dump(tt, lexin, lexout, root, NULL);
 			continue;
 		}
 
@@ -276,6 +275,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 		///// ASM
 		if((tt & TEST_GEN) == TEST_GEN)
 		{
+			AsmInput asm_in;
 			asm_in.root = root;
 
 			char asm_file_path[L_tmpnam_s + 2]; // NOTE: +2 for .s
@@ -337,7 +337,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			timer.end();
 			update_perf(&perf->run_exe, timer.milliseconds());
 
-			dump(tt, file_path, lexout, root, asm_in);
+			dump(tt, lexin, lexout, root, &asm_in);
 			continue;
 		}
 
@@ -366,9 +366,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 			{
 				printf("Interp result of [%s] does not match ground truth!\nReturned: %d vs Ground Truth: %d\n", 
 					file_path, interp_result, clang_ground_truth);
-				fprintf(stdout, "===RAW FILE [%s]===\n", lexin.filename);
-				fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
-				fprintf(stdout, "\n===END RAW FILE===\n");
+				dump(tt, lexin, lexout, root, NULL);
 				debug_break();
 			}
 			continue;
@@ -566,44 +564,49 @@ int main(int argc, char** argv)
 		Timer timer;
 		timer.start();
 
-		Test(TEST_LEX, &perf, "../stage_1/invalid/");
-		Test(TEST_LEX, &perf, "../stage_2/invalid/");
-		Test(TEST_LEX, &perf, "../stage_3/invalid/");
-		Test(TEST_LEX, &perf, "../stage_4/invalid/");
-		Test(TEST_LEX, &perf, "../stage_5/invalid/");
-		Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
-		Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
-		Test(TEST_LEX, &perf, "../stage_7/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_1/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_2/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_3/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_4/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_5/invalid/");
+		//Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
+		//Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
+		//Test(TEST_LEX, &perf, "../stage_7/invalid/");
+		Test(TEST_LEX, &perf, "../stage_8/invalid/");
 
-		Test(TEST_LEX, &perf, "../stage_1/valid/");
-		Test(TEST_LEX, &perf, "../stage_2/valid/");
-		Test(TEST_LEX, &perf, "../stage_3/valid/");
-		Test(TEST_LEX, &perf, "../stage_4/valid/");
-		Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
-		Test(TEST_LEX, &perf, "../stage_5/valid/");
-		Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
-		Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
-		Test(TEST_LEX, &perf, "../stage_7/valid/");
+		//Test(TEST_LEX, &perf, "../stage_1/valid/");
+		//Test(TEST_LEX, &perf, "../stage_2/valid/");
+		//Test(TEST_LEX, &perf, "../stage_3/valid/");
+		//Test(TEST_LEX, &perf, "../stage_4/valid/");
+		//Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
+		//Test(TEST_LEX, &perf, "../stage_5/valid/");
+		//Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
+		//Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
+		//Test(TEST_LEX, &perf, "../stage_7/valid/");
+		Test(TEST_LEX, &perf, "../stage_8/valid/");
 
-		Test(TEST_INTERP, &perf, "../stage_1/valid/");
-		Test(TEST_INTERP, &perf, "../stage_2/valid/");
-		Test(TEST_INTERP, &perf, "../stage_3/valid/");
-		Test(TEST_INTERP, &perf, "../stage_4/valid/");
-		Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
-		Test(TEST_INTERP, &perf, "../stage_5/valid/");
-		Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
-		Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
-		Test(TEST_INTERP, &perf, "../stage_7/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_1/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_2/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_3/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_4/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
+		//Test(TEST_INTERP, &perf, "../stage_5/valid/");
+		//Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
+		//Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
+		//Test(TEST_INTERP, &perf, "../stage_7/valid/");
+		Test(TEST_INTERP, &perf, "../stage_8/valid/");
 
-		Test(TEST_GEN, &perf, "../stage_1/valid/");
-		Test(TEST_GEN, &perf, "../stage_2/valid/");
-		Test(TEST_GEN, &perf, "../stage_3/valid/");
-		Test(TEST_GEN, &perf, "../stage_4/valid/");
-		Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
-		Test(TEST_GEN, &perf, "../stage_5/valid/");
-		Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
-		Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
-		Test(TEST_GEN, &perf, "../stage_7/valid/");
+
+		//Test(TEST_GEN, &perf, "../stage_1/valid/");
+		//Test(TEST_GEN, &perf, "../stage_2/valid/");
+		//Test(TEST_GEN, &perf, "../stage_3/valid/");
+		//Test(TEST_GEN, &perf, "../stage_4/valid/");
+		//Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
+		//Test(TEST_GEN, &perf, "../stage_5/valid/");
+		//Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
+		//Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
+		//Test(TEST_GEN, &perf, "../stage_7/valid/");
+		Test(TEST_GEN, &perf, "../stage_8/valid/");
 
 		timer.end();
 		printf("Tests took %.2fms\n", timer.milliseconds());

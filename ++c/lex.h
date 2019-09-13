@@ -13,6 +13,7 @@ enum eToken : uint8_t
 	constant_number = 2,
 
 	logical_not		= '!',//ASCII 33
+	mod				= '%',//37
 	bitwise_and		= '&',//38
 	open_parens		= '(',//40
 	closed_parens	= ')',//41
@@ -41,7 +42,12 @@ enum eToken : uint8_t
 	keyword_int,
 	keyword_return,
 	keyword_if,
-	keyword_else
+	keyword_else,
+	keyword_for,
+	keyword_while,
+	keyword_do,
+	keyword_break,
+	keyword_continue,
 };
 
 struct Token

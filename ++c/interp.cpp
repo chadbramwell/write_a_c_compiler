@@ -17,7 +17,10 @@ struct interp_context
 	stack_var stack[256]; // uses sentinal values for stack frames
 	int stack_top;
 
+	int loop_depth;
 	bool return_triggered;
+	bool break_triggered;
+	bool continue_triggered;
 };
 
 bool push_frame(interp_context* ctx)
@@ -108,12 +111,33 @@ bool write_var(interp_context* ctx, const char* id, int value)
 
 bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 {
-	if (root->is_number)
+	if (root->is_empty)
+	{
+		*out_result = 0;
+		return true;
+	}
+	else if (root->is_break_or_continue_op)
+	{
+		if (root->op == eToken::keyword_break)
+		{
+			*out_result = 0;
+			ctx->break_triggered = true;
+			return true;
+		}
+		else if (root->op == eToken::keyword_continue)
+		{
+			*out_result = 0;
+			ctx->continue_triggered = true;
+			return true;
+		}
+		RETURN_INTERP_FAILURE;
+	}
+	else if (root->is_number)
 	{
 		*out_result = (int)root->number;
 		return true;
 	}
-	if (root->is_unary_op)
+	else if (root->is_unary_op)
 	{
 		if (root->children.size() != 1) RETURN_INTERP_FAILURE;
 		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
@@ -128,7 +152,7 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		
 		RETURN_INTERP_FAILURE;
 	}
-	if (root->is_binary_op)
+	else if (root->is_binary_op)
 	{
 		if (root->children.size() != 2) RETURN_INTERP_FAILURE;
 
@@ -158,6 +182,7 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 
 		switch (root->op)
 		{
+		case '%': *out_result = lhs % rhs; return true;
 		case '*': *out_result = lhs * rhs; return true;
 		case '+': *out_result = lhs + rhs; return true;
 		case '-': *out_result = lhs - rhs; return true;
@@ -174,7 +199,7 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 
 		RETURN_INTERP_FAILURE;
 	}
-	if (root->is_if
+	else if (root->is_if
 		|| root->is_ternery_op)
 	{
 		if (root->children.size() == 2)
@@ -203,7 +228,117 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		}
 		RETURN_INTERP_FAILURE;
 	}
-	if (root->var_name.nts)
+	else if (root->is_for)
+	{
+		assert(root->children.size() == 4);
+		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
+
+		// init
+		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+
+		assert(!ctx->return_triggered);
+		assert(!ctx->break_triggered);
+		assert(!ctx->continue_triggered);
+		++ctx->loop_depth;
+		while (true)
+		{
+			ctx->break_triggered = false;
+			ctx->continue_triggered = false;
+
+			// condition
+			if (!root->children[1]->is_empty)
+			{
+				if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+				if (!*out_result) break;
+			}
+
+			// body
+			if (!interp(root->children[3], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (ctx->return_triggered
+				|| ctx->break_triggered)
+				break;
+
+			// update
+			if (!interp(root->children[2], ctx, out_result)) RETURN_INTERP_FAILURE;
+		}
+		--ctx->loop_depth;
+		ctx->break_triggered = false;
+		ctx->continue_triggered = false;
+
+		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
+		return true;
+	}
+	else if (root->is_while)
+	{
+		assert(root->children.size() == 2);
+		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
+
+		assert(!ctx->return_triggered);
+		assert(!ctx->break_triggered);
+		assert(!ctx->continue_triggered);
+		++ctx->loop_depth;
+		while (true)
+		{
+			ctx->break_triggered = false;
+			ctx->continue_triggered = false;
+
+			// condition
+			if (!root->children[0]->is_empty)
+			{
+				if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+				if (!*out_result)
+					break;
+			}
+
+			// body
+			if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (ctx->return_triggered
+				|| ctx->break_triggered)
+				break;
+		}
+		--ctx->loop_depth;
+		ctx->break_triggered = false;
+		ctx->continue_triggered = false;
+
+		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
+		return true;
+	}
+	else if (root->is_do_while)
+	{
+		assert(root->children.size() == 2);
+		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
+
+		assert(!ctx->return_triggered);
+		assert(!ctx->break_triggered);
+		assert(!ctx->continue_triggered);
+		++ctx->loop_depth;
+		while (true)
+		{
+			ctx->break_triggered = false;
+			ctx->continue_triggered = false;
+
+			// body
+			if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (ctx->return_triggered
+				|| ctx->break_triggered)
+				break;
+
+			// condition
+			if (!root->children[1]->is_empty)
+			{
+				if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+				if (!*out_result)
+					break;
+			}
+		}
+		--ctx->loop_depth;
+		ctx->break_triggered = false;
+		ctx->continue_triggered = false;
+
+		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
+		return true;
+	}
+	else if (root->var_name.nts)
 	{
 		if (root->is_variable_declaration && root->is_variable_assignment)
 		{
@@ -234,7 +369,7 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 
 		RETURN_INTERP_FAILURE;
 	}
-	if (root->is_block_list)
+	else if (root->is_block_list)
 	{
 		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
@@ -243,11 +378,16 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 			if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
 			if (ctx->return_triggered)
 				break;
+			if (ctx->break_triggered || ctx->continue_triggered)
+			{
+				assert(ctx->loop_depth > 0);
+				break;
+			}
 		}
 		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 		return true;
 	}
-	if (root->is_return)
+	else if (root->is_return)
 	{
 		assert(root->children.size() != 0); // This should've been caught in "if(root->is_function)"
 		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
@@ -255,9 +395,11 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		ctx->return_triggered = true;
 		return true;
 	}
-	if (root->is_function)
+	else if (root->is_function)
 	{
 		assert(ctx->return_triggered == false);
+		assert(ctx->break_triggered == false);
+		assert(ctx->continue_triggered == false);
 		if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 		for (size_t i = 0; i < root->children.size(); ++i)
 		{
@@ -265,6 +407,8 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 			if (ctx->return_triggered)
 				break;
 		}
+		assert(ctx->break_triggered == false);
+		assert(ctx->continue_triggered == false);
 		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 
 		// HANDLE SPECIAL CASE: C standard says if main() does not have a return than it should return 0
@@ -282,7 +426,7 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 
 		return true;
 	}
-	if (root->is_program)
+	else if (root->is_program)
 	{
 		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
 		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
@@ -296,7 +440,10 @@ bool interp_return_value(ASTNode* root, int* out_result)
 {
 	interp_context ctx;
 	ctx.stack_top = 0;
+	ctx.loop_depth = 0;
 	ctx.return_triggered = false;
+	ctx.break_triggered = false;
+	ctx.continue_triggered = false;
 
 	return interp(root, &ctx, out_result);
 }

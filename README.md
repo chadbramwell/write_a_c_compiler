@@ -60,6 +60,10 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
   * Spent 1 day making the interpreter support everything up to stage 7.
   * Added unary|number reduction 'cause I got tired of seeing it in my AST output. It's marked as an "optimization" which is in quotes because it's more a better version of Nora's example compiler then it is an actual optimization.
   * Spent 1 day adding perf stats and optimizing lex (mostly by eliminating C++ stuff - hidden ctor/dtors and memory allocations from std::vector)
+* 9/13/2019 (just after midnight so sort of 9/12?) - STAGE 8 _INPROGRESS_
+  * Spent 1 day.
+  * Added support for mod (%). Interp works for %, for, while, and do-while loops. Gen just about done.
+  * Stage 8 is the first stage where I've deviated from grammer tree == ast function graph. Well, I've never liked this approach anyways so... :P
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 

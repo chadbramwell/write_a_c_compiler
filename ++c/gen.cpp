@@ -1,6 +1,11 @@
 #include "gen.h"
 #include "debug.h"
 
+struct loop_label
+{
+	const char* end_label; // for break/return
+	const char* update_label; // for continue/end of body
+};
 
 struct gen_ctx
 {
@@ -11,6 +16,9 @@ struct gen_ctx
 	str stack_frames[256][256];
 	uint8_t sv_frame_len[256];
 	uint8_t sv_num_frames;
+
+	// labels for break/continue/return inside of loop
+	std::vector<loop_label> loop_labels;
 };
 
 bool push_stack_frame(gen_ctx* ctx)
@@ -108,6 +116,9 @@ uint64_t get_stack_offset(gen_ctx* ctx, const str& s)
 
 bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
+	if (n->is_empty)
+		return true;
+
 	if (n->is_function)
 	{
 		bool ok = push_stack_frame(ctx);
@@ -268,6 +279,81 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		return true;
 	}
 
+	if (n->is_break_or_continue_op && n->op == eToken::keyword_break)
+	{
+		assert(n->children.size() == 0);
+		assert(ctx->loop_labels.size() > 0);
+		fprintf(ctx->out, "  jmp %s\n", ctx->loop_labels.back().end_label);
+		return true;
+	}
+	if (n->is_break_or_continue_op && n->op == eToken::keyword_continue)
+	{
+		assert(n->children.size() == 0);
+		assert(ctx->loop_labels.size() > 0);
+		fprintf(ctx->out, "  jmp %s\n", ctx->loop_labels.back().update_label);
+		return true;
+	}
+
+	if (n->is_for)
+	{
+		assert(n->children.size() == 4);
+
+		char label_for_update[32];
+		sprintf_s(label_for_update, "for_update_%" PRIu64, ctx->label_index++);
+		char label_for_cond[32];
+		sprintf_s(label_for_cond, "for_cond_%" PRIu64, ctx->label_index++);
+		char label_for_end[32];
+		sprintf_s(label_for_end, "for_end_%" PRIu64, ctx->label_index++);
+
+		loop_label ll;
+		ll.end_label = label_for_end;
+		ll.update_label = label_for_update;
+		ctx->loop_labels.push_back(ll);
+
+		bool ok = push_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		// init
+		if (!gen_asm_node(ctx, n->children[0]))
+			return false;
+		fprintf(ctx->out, "  jmp %s\n", label_for_cond);
+
+		// update, jump here at end of body or on continue
+		fprintf(ctx->out, "%s:\n", label_for_update);
+		if (!gen_asm_node(ctx, n->children[2]))
+			return false;
+
+		// condition
+		fprintf(ctx->out, "%s:\n", label_for_cond);
+		if (!gen_asm_node(ctx, n->children[1]))
+			return false;
+		fprintf(ctx->out, "  cmp $0, %%rax\n");
+		fprintf(ctx->out, "  je %s\n", label_for_end);
+		
+		// body
+		if (!gen_asm_node(ctx, n->children[3]))
+			return false;
+		fprintf(ctx->out, "  jmp %s\n", label_for_update);
+
+		// end, jump here on break or return
+		fprintf(ctx->out, "%s:\n", label_for_end);
+
+		ok = pop_stack_frame(ctx);
+		if (!ok)
+		{
+			debug_break();
+			return false;
+		}
+
+		ctx->loop_labels.pop_back();
+
+		return true;
+	}
+
 	if (n->is_ternery_op)
 	{
 		assert(n->children.size() == 3);
@@ -349,14 +435,16 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			fprintf(ctx->out, "  pop %%rcx\n");
 			fprintf(ctx->out, "  imul %%rcx, %%rax\n");
 		} break;
-		case eToken::forward_slash:
+		case eToken::forward_slash: case eToken::mod:
 		{
 			gen_asm_node(ctx, n->children[1]); // note swapped children.
 			fprintf(ctx->out, "  push %%rax\n");
 			gen_asm_node(ctx, n->children[0]);
 			fprintf(ctx->out, "  pop %%rcx\n");
 			fprintf(ctx->out, "  xor %%rdx, %%rdx\n"); //note dividend is combo of EDX:EAX. If we don't 0 out EDX we could get an integer overflow exception because RAX won't be big enough to store the result of the DIV
-			fprintf(ctx->out, "  idiv %%rcx\n"); // output stored in rax
+			fprintf(ctx->out, "  idiv %%rcx\n"); // quotient stored in rax, remainder in rdx
+			if (n->op == eToken::mod)
+				fprintf(ctx->out, "  mov %%rdx, %%rax\n");
 		} break;
 		case '<':
 		{
@@ -365,6 +453,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			gen_asm_node(ctx, n->children[1]);
 			fprintf(ctx->out, "  pop %%rcx\n");
 			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
 			fprintf(ctx->out, "  setl %%al\n");
 		} break;
 		case '>':
@@ -374,6 +463,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 			gen_asm_node(ctx, n->children[1]);
 			fprintf(ctx->out, "  pop %%rcx\n");
 			fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
+			fprintf(ctx->out, "  mov $0, %%rax\n");
 			fprintf(ctx->out, "  setg %%al\n");
 		} break;
 		case eToken::logical_and:

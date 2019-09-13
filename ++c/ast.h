@@ -20,16 +20,21 @@ struct ASTNode
 {
 	bool is_program;
 	bool is_function;
-	bool is_block_list;
-	bool is_return;
-	bool is_if;
-	bool is_variable_declaration;
-	bool is_variable_assignment;
-	bool is_variable_usage;
+	bool is_block_list; // many children
+	bool is_return; // expects 1 child
+	bool is_if; // expects 2-3 children: condition, true statement, [false statement]
+	bool is_for; // expects 4 children: init, condition, update, loop body
+	bool is_while; // expects 2 children: condition, loop body
+	bool is_do_while; // expects 2 children: loop body, condition
+	bool is_variable_declaration; // expects var_name, **type assumed to be int TODO**
+	bool is_variable_assignment; // expects var_name and 1 child
+	bool is_variable_usage; // expects var_name
 	bool is_number;
 	bool is_unary_op;
 	bool is_binary_op;
-	bool is_ternery_op;
+	bool is_ternery_op; //?: (op ignored)
+	bool is_break_or_continue_op; //break or continue in op
+	bool is_empty;
 
 	eToken op;
 	str func_name;
@@ -44,6 +49,9 @@ struct ASTNode
 		, is_block_list(false)
 		, is_return(false)
 		, is_if(false)
+		, is_for(false)
+		, is_while(false)
+		, is_do_while(false)
 		, is_variable_declaration(false)
 		, is_variable_assignment(false)
 		, is_variable_usage(false)
@@ -51,6 +59,8 @@ struct ASTNode
 		, is_unary_op(false)
 		, is_binary_op(false)
 		, is_ternery_op(false)
+		, is_break_or_continue_op(false)
+		, is_empty(false)
 		, op(eToken::UNKNOWN)
 		, func_name({})
 		, var_name({})

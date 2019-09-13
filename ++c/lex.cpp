@@ -53,10 +53,24 @@ Token* push_id(LexOutput* out, const char* start, const char* end)
 
 bool lex(const LexInput& input, LexOutput& output)
 {
-	const str strInt = strings_insert_nts("int");
-	const str strReturn = strings_insert_nts("return");
-	const str strIf = strings_insert_nts("if");
-	const str strElse = strings_insert_nts("else");
+	struct keyword
+	{
+		const char* nts;
+		eToken token_id;
+	};
+#define KW(id) {strings_insert_nts(#id).nts, eToken::keyword_##id}
+	const keyword keywords[] = {
+		KW(int),
+		KW(return),
+		KW(if),
+		KW(else),
+		KW(for),
+		KW(while),
+		KW(do),
+		KW(break),
+		KW(continue)
+	};
+#undef KW
 
 	// store length of output buffer and wipe it's length for return value
 	// code below will write to and increment end_output
@@ -118,6 +132,10 @@ bool lex(const LexInput& input, LexOutput& output)
 		{
 		case '!':
 			push_1c(&output, eToken::logical_not, stream);
+			++stream;
+			continue;
+		case '%':
+			push_1c(&output, eToken::mod, stream);
 			++stream;
 			continue;
 		case '&':
@@ -218,14 +236,14 @@ bool lex(const LexInput& input, LexOutput& output)
 			Token* token = push_id(&output, stream, token_end);
 			stream = token_end;
 
-			if (token->identifier.nts == strInt.nts)
-				token->type = eToken::keyword_int;
-			else if (token->identifier.nts == strReturn.nts)
-				token->type = eToken::keyword_return;
-			else if (token->identifier.nts == strIf.nts)
-				token->type = eToken::keyword_if;
-			else if (token->identifier.nts == strElse.nts)
-				token->type = eToken::keyword_else;
+			for (int i = 0; i < _countof(keywords); ++i)
+			{
+				if (token->identifier.nts == keywords[i].nts)
+				{
+					token->type = keywords[i].token_id;
+					break;
+				}
+			}
 
 			continue;
 		}
@@ -255,6 +273,8 @@ void dump_lex(FILE* file, const LexOutput& lex)
 			fprintf(file, "%" PRIu64, token.number);
 			continue;
 		case '!': fputc(token.type, file); continue;
+		case '%': fputc(token.type, file); continue;
+		case '&': fputc(token.type, file); continue;
 		case '(': fputc(token.type, file); continue;
 		case ')': fputc(token.type, file); continue;
 		case '*': fputc(token.type, file); continue;
@@ -280,6 +300,11 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case eToken::keyword_return: fprintf(file, "return "); continue;
 		case eToken::keyword_if: fprintf(file, "if "); continue;
 		case eToken::keyword_else: fprintf(file, "else "); continue;
+		case eToken::keyword_for: fprintf(file, "for"); continue;
+		case eToken::keyword_while: fprintf(file, "while"); continue;
+		case eToken::keyword_do: fprintf(file, "do"); continue;
+		case eToken::keyword_break: fprintf(file, "break"); continue;
+		case eToken::keyword_continue: fprintf(file, "continue"); continue;
 		}
 		
 		debug_break();
