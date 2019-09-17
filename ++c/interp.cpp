@@ -338,32 +338,30 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 		return true;
 	}
-	else if (root->var_name.nts)
+	else if (root->type == AST_var)
 	{
-		if (root->is_variable_declaration && root->is_variable_assignment)
+		if (root->var.is_variable_declaration && root->var.is_variable_assignment)
 		{
-			assert(root->children.size() == 1);
-			if (!push_var(ctx, root->var_name.nts)) RETURN_INTERP_FAILURE;
-			if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-			if (!write_var(ctx, root->var_name.nts, *out_result)) RETURN_INTERP_FAILURE;
+			if (!push_var(ctx, root->var.name.nts)) RETURN_INTERP_FAILURE;
+			if (!interp(root->var.assign_expression, ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (!write_var(ctx, root->var.name.nts, *out_result)) RETURN_INTERP_FAILURE;
 			return true;
 		}
-		else if(root->is_variable_declaration)
+		else if(root->var.is_variable_declaration)
 		{
-			assert(root->children.size() == 0);
-			if (!push_var(ctx, root->var_name.nts)) RETURN_INTERP_FAILURE;
+			assert(!root->var.assign_expression);
+			if (!push_var(ctx, root->var.name.nts)) RETURN_INTERP_FAILURE;
 			return true;
 		}
-		else if (root->is_variable_assignment)
+		else if (root->var.is_variable_assignment)
 		{
-			assert(root->children.size() == 1);
-			if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-			if (!write_var(ctx, root->var_name.nts, *out_result)) RETURN_INTERP_FAILURE;
+			if (!interp(root->var.assign_expression, ctx, out_result)) RETURN_INTERP_FAILURE;
+			if (!write_var(ctx, root->var.name.nts, *out_result)) RETURN_INTERP_FAILURE;
 			return true;
 		}
-		else if (root->is_variable_usage)
+		else if (root->var.is_variable_usage)
 		{
-			if (!read_var(ctx, root->var_name.nts, out_result)) RETURN_INTERP_FAILURE;
+			if (!read_var(ctx, root->var.name.nts, out_result)) RETURN_INTERP_FAILURE;
 			return true;
 		}
 
@@ -387,11 +385,9 @@ bool interp(ASTNode* root, interp_context* ctx, int* out_result)
 		if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 		return true;
 	}
-	else if (root->is_return)
+	else if (root->type == AST_ret)
 	{
-		assert(root->children.size() != 0); // This should've been caught in "if(root->is_function)"
-		if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
-		if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+		if (root->ret.expression && !interp(root->ret.expression, ctx, out_result)) RETURN_INTERP_FAILURE;
 		ctx->return_triggered = true;
 		return true;
 	}

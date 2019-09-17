@@ -61,14 +61,16 @@ void dump_simplify(FILE* out, const ASTNode* root)
 		fprintf(out, "}");
 		return;
 	}
-	else if (root->is_return)
+	else if (root->type == AST_ret)
 	{
-		fprintf(out, "return ");
-		for (size_t i = 0; i < root->children.size(); ++i)
+		if (root->ret.expression)
 		{
-			dump_simplify(out, root->children[i]);
+			fprintf(out, "return ");
+			dump_simplify(out, root->ret.expression);
+			fprintf(out, ";");
 		}
-		fprintf(out, ";");
+		else
+			fprintf(out, "return;");
 		return;
 	}
 	else if (root->is_number)

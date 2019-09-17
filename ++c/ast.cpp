@@ -176,7 +176,8 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
 	if (tokens.next->type == eToken::keyword_int)
 	{
 		ASTNode n;
-		n.is_variable_declaration = true;
+		n.type = AST_var;
+		n.var.is_variable_declaration = true;
 
 		++tokens.next;
 		if (tokens.next == tokens.end)
@@ -188,7 +189,7 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
 			return NULL;
 		}
 
-		n.var_name = tokens.next->identifier;
+		n.var.name = tokens.next->identifier;
 		++tokens.next;
 
 		if (tokens.next == tokens.end)
@@ -196,17 +197,15 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
 
 		if (tokens.next->type == eToken::assignment)
 		{
-			n.is_variable_assignment = true;
+			n.var.is_variable_assignment = true;
 			++tokens.next;
 
-			ASTNode* expr = parse_expression(tokens, errors);
-			if (!expr)
+			n.var.assign_expression = parse_expression(tokens, errors);
+			if (!n.var.assign_expression)
 			{
 				append_error(errors, tokens.next, "expected expression after =");
 				return NULL;
 			}
-
-			n.children.push_back(expr);
 		}
 
 		if (!expect_and_advance(tokens, eToken::semicolon, errors)) return NULL;
@@ -238,20 +237,18 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	if (tokens.next->type == eToken::keyword_return)
 	{
 		ASTNode n;
-		n.is_return = true;
+		n.type = AST_ret;
 
 		++tokens.next;
 		if (tokens.next == tokens.end)
 			return NULL;
 
-		ASTNode* expr = parse_expression(tokens, errors);
-		if (!expr)
+		n.ret.expression = parse_expression(tokens, errors);
+		if (!n.ret.expression)
 		{
 			append_error(errors, tokens.next, "expected expression after return");
 			return NULL;
 		}
-
-		n.children.push_back(expr);
 
 		if (!expect_and_advance(tokens, eToken::semicolon, errors)) return NULL;
 
@@ -427,19 +424,18 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 		&& tokens.next[1].type == eToken::assignment)
 	{
 		ASTNode n;
-		n.is_variable_assignment = true;
-		n.var_name = tokens.next->identifier;
+		n.type = AST_var;
+		n.var.is_variable_assignment = true;
+		n.var.name = tokens.next->identifier;
 
 		tokens.next += 2; //skip id and assignment
 
-		ASTNode* expr = parse_expression(tokens, errors);
-		if (!expr)
+		n.var.assign_expression = parse_expression(tokens, errors);
+		if (!n.var.assign_expression)
 		{
 			append_error(errors, tokens.next, "expected expression after =");
 			return NULL;
 		}
-
-		n.children.push_back(expr);
 
 		io_tokens = tokens;
 		return new ASTNode(n);
@@ -946,8 +942,9 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
 	if (tokens.next->type == eToken::identifier)
 	{
 		ASTNode n;
-		n.is_variable_usage = true;
-		n.var_name = tokens.next->identifier;
+		n.type = AST_var;
+		n.var.is_variable_usage = true;
+		n.var.name = tokens.next->identifier;
 		++tokens.next;
 
 		io_tokens = tokens;
@@ -1182,14 +1179,10 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fprintf(file, "%*c]==END FUNC %s\n", spaces_indent, ' ', self.func_name.nts);
 		return;
 	}
-	else if (self.is_return)
+	else if (self.type == AST_ret)
 	{
-		assert(self.children.size() > 0); // not technically valid. revisit later.
 		fprintf(file, "%*cRETURN\n", spaces_indent, ' ');
-		for (size_t i = 0; i < self.children.size(); ++i)
-		{
-			dump_ast(file, *self.children[i], spaces_indent + 2);
-		}
+		if(self.ret.expression) dump_ast(file, *self.ret.expression, spaces_indent + 2);
 		return;
 	}
 	else if (self.is_program || self.is_block_list)
@@ -1309,38 +1302,38 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 		fprintf(file, ")\n");
 		return;
 	}
-	else if (self.var_name.nts)
+	else if (self.type == AST_var)
 	{
-		if (self.is_variable_declaration && self.is_variable_assignment)
+		if (self.var.is_variable_declaration && self.var.is_variable_assignment)
 		{
 			assert(self.children.size() == 1);
-			fprintf(file, "%*cVar<%s:%s>=\n", spaces_indent, ' ', "INT", self.var_name.nts);
+			fprintf(file, "%*cVar<%s:%s>=\n", spaces_indent, ' ', "INT", self.var.name.nts);
 			dump_ast(file, *self.children[0], spaces_indent + 2);
 			return;
 		}
-		else if (self.is_variable_assignment)
+		else if (self.var.is_variable_assignment)
 		{
 			assert(self.children.size() == 1);
-			fprintf(file, "%*cVar<%s>=\n", spaces_indent, ' ', self.var_name.nts);
+			fprintf(file, "%*cVar<%s>=\n", spaces_indent, ' ', self.var.name.nts);
 			dump_ast(file, *self.children[0], spaces_indent + 2);
 			return;
 		}
-		else if (self.is_variable_declaration)
+		else if (self.var.is_variable_declaration)
 		{
 			assert(self.children.size() == 0);
-			fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var_name.nts);
+			fprintf(file, "%*cVar<%s:%s>\n", spaces_indent, ' ', "INT", self.var.name.nts);
 			return;
 		}
-		else if (self.is_variable_usage)
+		else if (self.var.is_variable_usage)
 		{
 			assert(self.children.size() == 0);
-			fprintf(file, "%*cVar<%s>\n", spaces_indent, ' ', self.var_name.nts);
+			fprintf(file, "%*cVar<%s>\n", spaces_indent, ' ', self.var.name.nts);
 			return;
 		}
 
 		// unknown var_name usage
 		debug_break();
-		fprintf(file, "%*c???%s???\n", spaces_indent, ' ', self.var_name.nts);
+		fprintf(file, "%*c???%s???\n", spaces_indent, ' ', self.var.name.nts);
 		return;
 	}
 	else if (self.is_break_or_continue_op && self.op == eToken::keyword_break)

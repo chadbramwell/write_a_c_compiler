@@ -139,7 +139,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		}
 		
 		// Handle main() that does not have a return statement.
-		if (n->children.size() == 0 || !n->children.back()->is_return)
+		if (n->children.size() == 0 || n->children.back()->type != AST_ret)
 		{
 			// According to the C11 Standard, if main doesn't have a return statement than it should return 0.
 			//  If a function other than main does not have a return statement than it is undefined behavior.
@@ -178,13 +178,10 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		return ok;
 	}
 
-	if (n->is_return)
+	if (n->type == AST_ret)
 	{
-		for (size_t i = 0; i < n->children.size(); ++i)
-		{
-			if (!gen_asm_node(ctx, n->children[i]))
-				return false;
-		}
+		if (n->ret.expression && !gen_asm_node(ctx, n->ret.expression))
+			return false;
 
 		// function epilogue
 		fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
@@ -194,53 +191,38 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 		return true;
 	}
 
-	if (n->var_name.nts)
+	if (n->type == AST_var)
 	{
-		if (n->is_variable_declaration)
+		if (n->var.is_variable_declaration)
 		{
-			bool ok = push_vars(ctx, &n->var_name, 1);
+			bool ok = push_vars(ctx, &n->var.name, 1);
 			if (!ok)
 			{
 				debug_break();
 				return false;
 			}
-			fprintf(ctx->out, "  sub $8, %%rsp #make room for %s\n", n->var_name.nts);
+			fprintf(ctx->out, "  sub $8, %%rsp #make room for %s\n", n->var.name.nts);
 		}
 
-		if (n->is_variable_assignment)
+		if (n->var.is_variable_assignment)
 		{
-			assert(n->children.size() == 1);
-
-			// special case, assigning a literal
-			// THIS DOESN'T WORK!!!
-			// EXAMPLE WHY THIS WONT WORK: (a=1)|| ... // the gist is that assigning a value also has a value itself. 
-			// THIS MIGHT STILL WORK IF: we are not part of an expression. Best test for that? Perhaps if our parent is a function or block list?
-			//if (n->children[0]->is_number)
-			//{
-			//	uint64_t stack_offset = get_stack_offset(ctx, n->var_name);
-			//	if (!stack_offset)
-			//		return false;
-			//	fprintf(ctx->out, "  movq $%" PRIi64 ", -%" PRIu64 "(%%rbp)\n", n->children[0]->number, stack_offset);
-			//	return true;
-			//}
-
-			if (!gen_asm_node(ctx, n->children[0]))
+			if (!gen_asm_node(ctx, n->var.assign_expression))
 				return false;
-			uint64_t stack_offset = get_stack_offset(ctx, n->var_name);
+			uint64_t stack_offset = get_stack_offset(ctx, n->var.name);
 			if (!stack_offset)
 				return false;
-			fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var_name.nts);
+			fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var.name.nts);
 			return true;
 		}
 
-		if (n->is_variable_usage)
+		if (n->var.is_variable_usage)
 		{
-			assert(n->children.size() == 0);
-			fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var_name), n->var_name.nts);
+			fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var.name), n->var.name.nts);
 			return true;
 		}
 		
 		// I guess it's just a decl this time...
+		assert(n->var.is_variable_declaration);
 		return true;
 	}
 
