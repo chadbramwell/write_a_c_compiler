@@ -19,6 +19,7 @@ enum eToken : uint8_t
 	closed_parens	= ')',//41
 	star			= '*',//42 - could be multiply, pointer decl, pointer deref
 	plus			= '+',//43 - could be sign decl or binary add
+	comma			= ',',//44
 	dash			= '-',//45 - could be sign decl or binary sub
 	forward_slash	= '/',//47
 	colon			= ':',//58

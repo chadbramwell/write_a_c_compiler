@@ -158,6 +158,10 @@ bool lex(const LexInput& input, LexOutput& output)
 			push_1c(&output, eToken::plus, stream);
 			++stream;
 			continue;
+		case ',':
+			push_1c(&output, eToken::comma, stream);
+			++stream;
+			continue;
 		case '-':
 			push_1c(&output, eToken::dash, stream);
 			++stream;
@@ -279,6 +283,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
 		case ')': fputc(token.type, file); continue;
 		case '*': fputc(token.type, file); continue;
 		case '+': fputc(token.type, file); continue;
+		case ',': fputc(token.type, file); continue;
 		case '-': fputc(token.type, file); continue;
 		case '/': fputc(token.type, file); continue;
 		case ':': fputc(token.type, file); continue;
