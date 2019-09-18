@@ -3,8 +3,8 @@
 // users may directly compare nts pointers to see if they are equal.
 struct str
 {
-	const char* nts;
-	int len;
+    const char* nts;
+    int len;
 };
 
 str strings_insert(const char* start, const char* end);

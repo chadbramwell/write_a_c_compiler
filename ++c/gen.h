@@ -3,7 +3,7 @@
 
 struct AsmInput
 {
-	const ASTNode* root;
+    const ASTNode* root;
 };
 
 bool gen_asm(FILE* file, const AsmInput& input);

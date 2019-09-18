@@ -3,10 +3,10 @@
 
 struct Timer
 {
-	uint64_t _start;
-	uint64_t _end;
+    uint64_t _start;
+    uint64_t _end;
 
-	void start();
-	void end();
-	float milliseconds() const;
+    void start();
+    void end();
+    float milliseconds() const;
 };
