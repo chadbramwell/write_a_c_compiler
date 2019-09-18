@@ -45,6 +45,7 @@ struct ASTNode
         struct {
             ASTNode* expression;
         } ret;
+
         struct {
             bool is_variable_declaration;
             bool is_variable_assignment;
@@ -52,6 +53,7 @@ struct ASTNode
             str name;
             ASTNode* assign_expression;
         } var;
+
         eToken op;
         str func_name;
         int64_t number;
