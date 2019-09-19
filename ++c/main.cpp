@@ -621,13 +621,13 @@ int main(int argc, char** argv)
         printf("Tests took %.2fms\n", timer.milliseconds());
 
         printf(                         "Perf Results  [low,    high,   avg   ]\n");
-        print_perf(&perf.read_file,        "  read_file:  ", "\n");
-        print_perf(&perf.lex,            "  lex:        ", "\n");
-        print_perf(&perf.ast,            "  ast:        ", "\n");
-        print_perf(&perf.gen_asm,        "  gen_asm:    ", "\n");
-        print_perf(&perf.gen_exe,        "  gen_exe:    ", "\n");
-        print_perf(&perf.run_exe,        "  run_exe:    ", "\n");
-        print_perf(&perf.ground_truth,    "  grnd_truth: ", "\n");
+        print_perf(&perf.read_file,     "  read_file:  ", "\n");
+        print_perf(&perf.lex,           "  lex:        ", "\n");
+        print_perf(&perf.ast,           "  ast:        ", "\n");
+        print_perf(&perf.gen_asm,       "  gen_asm:    ", "\n");
+        print_perf(&perf.gen_exe,       "  gen_exe:    ", "\n");
+        print_perf(&perf.run_exe,       "  run_exe:    ", "\n");
+        print_perf(&perf.ground_truth,  "  grnd_truth: ", "\n");
         print_perf(&perf.interp,        "  interp:     ", "\n");
 
         test_simplify_double_negative();

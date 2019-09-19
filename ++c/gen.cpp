@@ -116,10 +116,12 @@ uint64_t get_stack_offset(gen_ctx* ctx, const str& s)
 
 bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 {
-    if (n->is_empty)
+    assert(n);
+
+    if (n->type == AST_empty)
         return true;
 
-    if (n->is_function)
+    if (n->type == AST_fdef)
     {
         bool ok = push_stack_frame(ctx);
         if (!ok)
@@ -132,19 +134,19 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
         fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
 
-        for (size_t i = 0; i < n->children.size(); ++i)
+        for(uint32_t i = 0; i < n->fdef.body.size; ++i)
         {
-            if (!gen_asm_node(ctx, n->children[i]))
+            if (!gen_asm_node(ctx, n->fdef.body.nodes[i]))
                 return false;
         }
         
         // Handle main() that does not have a return statement.
-        if (n->children.size() == 0 || n->children.back()->type != AST_ret)
+        if (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size-1]->type != AST_ret)
         {
             // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
             //  If a function other than main does not have a return statement than it is undefined behavior.
             //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
-            assert(n->func_name.nts == strings_insert_nts("main").nts);
+            assert(n->fdef.name.nts == strings_insert_nts("main").nts);
             fprintf(ctx->out, "  mov $0, %%rax\n");
 
             // function epilogue
@@ -158,7 +160,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return ok;
     }
 
-    if (n->is_block_list)
+    if (n->type == AST_blocklist)
     {
         bool ok = push_stack_frame(ctx);
         if (!ok)
@@ -167,9 +169,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             return false;
         }
 
-        for (size_t i = 0; i < n->children.size(); ++i)
+        for (uint32_t i = 0; i < n->blocklist.size; ++i)
         {
-            if (!gen_asm_node(ctx, n->children[i]))
+            if (!gen_asm_node(ctx, n->blocklist.nodes[i]))
                 return false;
         }
 
@@ -226,11 +228,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return true;
     }
 
-    if (n->is_if)
+    if (n->type == AST_if)
     {
-        assert(n->children.size() > 1);
-        bool has_else = n->children.size() > 2;
-        if (has_else) assert(n->children.size() == 3);
+        bool has_else = n->ifdef.if_false;
 
         char label_else[32];
         sprintf_s(label_else, "else_%" PRIu64, ctx->label_index++);
@@ -238,50 +238,46 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         sprintf_s(label_end, "fi_%" PRIu64, ctx->label_index++);
 
         fprintf(ctx->out, "# if\n");
-        if (!gen_asm_node(ctx, n->children[0])) // if conditional expression
+        if (!gen_asm_node(ctx, n->ifdef.condition))
             return false;
         fprintf(ctx->out, "  cmp $0, %%rax\n");
         if (!has_else)
         {
             fprintf(ctx->out, "  je %s\n", label_end);
-            if (!gen_asm_node(ctx, n->children[1])) // if statement
+            if (!gen_asm_node(ctx, n->ifdef.if_true))
                 return false;
         }
         else
         {
             fprintf(ctx->out, "# else\n");
             fprintf(ctx->out, "  je %s\n", label_else);
-            if (!gen_asm_node(ctx, n->children[1])) // if statement
+            if (!gen_asm_node(ctx, n->ifdef.if_true))
                 return false;
             fprintf(ctx->out, "  jmp %s\n", label_end);
 
             fprintf(ctx->out, "%s:\n", label_else);
-            if (!gen_asm_node(ctx, n->children[2])) // else statement
+            if (!gen_asm_node(ctx, n->ifdef.if_false))
                 return false;
         }
         fprintf(ctx->out, "%s:\n", label_end);
         return true;
     }
 
-    if (n->is_break_or_continue_op && n->op == eToken::keyword_break)
+    if (n->type == AST_break)
     {
-        assert(n->children.size() == 0);
         assert(ctx->loop_labels.size() > 0);
         fprintf(ctx->out, "  jmp %s\n", ctx->loop_labels.back().end_label);
         return true;
     }
-    if (n->is_break_or_continue_op && n->op == eToken::keyword_continue)
+    if (n->type == AST_continue)
     {
-        assert(n->children.size() == 0);
         assert(ctx->loop_labels.size() > 0);
         fprintf(ctx->out, "  jmp %s\n", ctx->loop_labels.back().update_label);
         return true;
     }
 
-    if (n->is_for)
+    if (n->type == AST_for)
     {
-        assert(n->children.size() == 4);
-
         char label_for_update[32];
         sprintf_s(label_for_update, "for_update_%" PRIu64, ctx->label_index++);
         char label_for_cond[32];
@@ -302,27 +298,33 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         }
 
         // init
-        if (!gen_asm_node(ctx, n->children[0]))
-            return false;
+        if (n->forloop.init)
+        {
+            if (!gen_asm_node(ctx, n->forloop.init))
+                return false;
+        }
 
         // condition
         fprintf(ctx->out, "%s:\n", label_for_cond);
-        if (!n->children[1]->is_empty)
+        if (n->forloop.condition)
         {
-            if (!gen_asm_node(ctx, n->children[1]))
+            if (!gen_asm_node(ctx, n->forloop.condition))
                 return false;
             fprintf(ctx->out, "  cmp $0, %%rax\n");
             fprintf(ctx->out, "  je %s\n", label_for_end);
         }
         
         // body
-        if (!gen_asm_node(ctx, n->children[3]))
+        if (!gen_asm_node(ctx, n->forloop.body))
             return false;
 
-        // update - rool into from body or jump on continue
+        // update - roll into from body or jump on continue
         fprintf(ctx->out, "%s:\n", label_for_update);
-        if (!gen_asm_node(ctx, n->children[2]))
-            return false;
+        if (n->forloop.update)
+        {
+            if (!gen_asm_node(ctx, n->forloop.update))
+                return false;
+        }
         fprintf(ctx->out, "  jmp %s\n", label_for_cond);
 
         // end, jump here on break or return
@@ -340,10 +342,8 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return true;
     }
 
-    if (n->is_while)
+    if (n->type == AST_while)
     {
-        assert(n->children.size() == 2);
-
         char label_while[32];
         sprintf_s(label_while, "while_%" PRIu64, ctx->label_index++);
         char label_while_end[32];
@@ -363,13 +363,13 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
         // condition - jump here at end of body or on continue
         fprintf(ctx->out, "%s:\n", label_while);
-        if (!gen_asm_node(ctx, n->children[0]))
+        if (!gen_asm_node(ctx, n->whileloop.condition))
             return false;
         fprintf(ctx->out, "  cmp $0, %%rax\n");
         fprintf(ctx->out, "  je %s\n", label_while_end);
         
         // body
-        if (!gen_asm_node(ctx, n->children[1]))
+        if (!gen_asm_node(ctx, n->whileloop.body))
             return false;
         fprintf(ctx->out, "  jmp %s\n", label_while); // after body, return to start
 
@@ -388,10 +388,8 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return true;
     }
 
-    if (n->is_do_while)
+    if (n->type == AST_dowhile)
     {
-        assert(n->children.size() == 2);
-
         char label_do_while_start[32];
         sprintf_s(label_do_while_start, "do_while_start_%" PRIu64, ctx->label_index++);
         char label_update_do_while[32];
@@ -415,12 +413,12 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         fprintf(ctx->out, "%s:\n", label_do_while_start);
 
         // body
-        if (!gen_asm_node(ctx, n->children[0]))
+        if (!gen_asm_node(ctx, n->whileloop.body))
             return false;
 
         // condition - jump here on continue
         fprintf(ctx->out, "%s:\n", label_update_do_while);
-        if (!gen_asm_node(ctx, n->children[1]))
+        if (!gen_asm_node(ctx, n->whileloop.condition))
             return false;
         fprintf(ctx->out, "  cmp $0, %%rax\n");
         fprintf(ctx->out, "  je %s\n", label_do_while_end);
@@ -441,24 +439,22 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return true;
     }
 
-    if (n->is_ternery_op)
+    if (n->type == AST_terop)
     {
-        assert(n->children.size() == 3);
-
         char label_else[32];
         sprintf_s(label_else, "ter_false_%" PRIu64, ctx->label_index++);
         char label_end[32];
         sprintf_s(label_end, "ter_end_%" PRIu64, ctx->label_index++);
 
-        if (!gen_asm_node(ctx, n->children[0]))
+        if (!gen_asm_node(ctx, n->terop.condition))
             return false;
         fprintf(ctx->out, "  cmp $0, %%rax\n");
         fprintf(ctx->out, "  je %s\n", label_else);
-        if (!gen_asm_node(ctx, n->children[1]))
+        if (!gen_asm_node(ctx, n->terop.if_true))
             return false;
         fprintf(ctx->out, "  jmp %s\n", label_end);
         fprintf(ctx->out, "%s:\n", label_else);
-        if (!gen_asm_node(ctx, n->children[2]))
+        if (!gen_asm_node(ctx, n->terop.if_false))
             return false;
         fprintf(ctx->out, "%s:\n", label_end);
         return true;
@@ -466,19 +462,16 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
     if (n->type == AST_num)
     {
-        fprintf(ctx->out, "  mov $%" PRIi64 ", %%rax\n", n->number);
+        fprintf(ctx->out, "  mov $%" PRIi64 ", %%rax\n", n->num.value);
         return true;
     }
     
-    if (n->is_unary_op)
+    if (n->type == AST_unop)
     {
-        for (size_t i = 0; i < n->children.size(); ++i)
-        {
-            if (!gen_asm_node(ctx, n->children[i]))
-                return false;
-        }
+        if (!gen_asm_node(ctx, n->unop.on))
+            return false;
 
-        switch (n->op)
+        switch (n->unop.op)
         {
         case '-': fprintf(ctx->out, "  neg %%rax\n"); return true;
         case '~': fprintf(ctx->out, "  not %%rax\n"); return true;
@@ -493,51 +486,50 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         return false;
     }
 
-    if (n->is_binary_op)
+    if (n->type == AST_binop)
     {
-        assert(n->children.size() == 2);
-        switch (n->op)
+        switch (n->binop.op)
         {
         case eToken::plus:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  add %%rcx, %%rax\n");
         } break;
         case eToken::dash:
         {
-            gen_asm_node(ctx, n->children[1]); // note swapped children. sub src, dst => dst - src => stored in dst
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  sub %%rcx, %%rax\n");
         } break;
         case eToken::star:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  imul %%rcx, %%rax\n");
         } break;
         case eToken::forward_slash: case eToken::mod:
         {
-            gen_asm_node(ctx, n->children[1]); // note swapped children.
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  xor %%rdx, %%rdx\n"); //note dividend is combo of EDX:EAX. If we don't 0 out EDX we could get an integer overflow exception because RAX won't be big enough to store the result of the DIV
             fprintf(ctx->out, "  idiv %%rcx\n"); // quotient stored in rax, remainder in rdx
-            if (n->op == eToken::mod)
+            if (n->binop.op == eToken::mod)
                 fprintf(ctx->out, "  mov %%rdx, %%rax\n");
         } break;
         case '<':
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -545,9 +537,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         } break;
         case '>':
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -558,12 +550,12 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             uint64_t label_index_rightside = ++ctx->label_index;
             uint64_t label_index_end = ++ctx->label_index;
 
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  cmp $0, %%rax\n");
             fprintf(ctx->out, "  jne check_right_of_and_%" PRIu64 "\n", label_index_rightside);
             fprintf(ctx->out, "  jmp end_and_%" PRIu64 "\n", label_index_end);
             fprintf(ctx->out, "check_right_of_and_%" PRIu64 ":\n", label_index_rightside);
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  cmp $0, %%rax\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setne %%al\n");
@@ -574,13 +566,13 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             uint64_t label_index_rightside = ++ctx->label_index;
             uint64_t label_index_end = ++ctx->label_index;
 
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  cmp $0, %%rax\n");
             fprintf(ctx->out, "  je check_right_of_or_%" PRIu64 "\n", label_index_rightside);
             fprintf(ctx->out, "  mov $1, %%rax\n");
             fprintf(ctx->out, "  jmp end_or_%" PRIu64 "\n", label_index_end);
             fprintf(ctx->out, "check_right_of_or_%" PRIu64 ":\n", label_index_rightside);
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  cmp $0, %%rax\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setne %%al\n");
@@ -588,9 +580,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         } break;
         case eToken::logical_equal:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -598,9 +590,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         } break;
         case eToken::logical_not_equal:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -608,9 +600,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         } break;
         case eToken::less_than_or_equal:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -618,9 +610,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         } break;
         case eToken::greater_than_or_equal:
         {
-            gen_asm_node(ctx, n->children[0]);
+            gen_asm_node(ctx, n->binop.left);
             fprintf(ctx->out, "  push %%rax\n");
-            gen_asm_node(ctx, n->children[1]);
+            gen_asm_node(ctx, n->binop.right);
             fprintf(ctx->out, "  pop %%rcx\n");
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
@@ -662,20 +654,29 @@ bool gen_asm(FILE* file, const AsmInput& input)
     */
     ASTNode* main = NULL;
 
-    for (size_t i = 0; i < input.root->children.size(); ++i)
+    if (!input.root->type == AST_program)
     {
-        if (input.root->children[i]->is_function)
+        debug_break();
+        return false;
+    }
+
+    for (uint32_t i = 0; i < input.root->program.size; ++i)
+    {
+        if (input.root->program.nodes[i]->type == AST_fdef)
         {
-            main = input.root->children[i];
+            main = input.root->program.nodes[i];
             break;
         }
     }
 
     if (!main)
+    {
+        debug_break();
         return false;
+    }
 
-    fprintf(ctx.out, "  .globl %s\n", main->func_name.nts);
-    fprintf(ctx.out, "%s:\n", main->func_name.nts);
+    fprintf(ctx.out, "  .globl %s\n", main->fdef.name.nts);
+    fprintf(ctx.out, "%s:\n", main->fdef.name.nts);
     //fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
     return gen_asm_node(&ctx, main);
 }

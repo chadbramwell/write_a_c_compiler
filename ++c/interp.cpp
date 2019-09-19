@@ -111,38 +111,34 @@ bool write_var(interp_context* ctx, const char* id, int64_t value)
 
 bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 {
-    if (root->is_empty)
+    assert(root);
+    if (root->type == AST_empty)
     {
         *out_result = 0;
         return true;
     }
-    else if (root->is_break_or_continue_op)
+    if (root->type == AST_break)
     {
-        if (root->op == eToken::keyword_break)
-        {
-            *out_result = 0;
-            ctx->break_triggered = true;
-            return true;
-        }
-        else if (root->op == eToken::keyword_continue)
-        {
-            *out_result = 0;
-            ctx->continue_triggered = true;
-            return true;
-        }
-        RETURN_INTERP_FAILURE;
+        *out_result = 0;
+        ctx->break_triggered = true;
+        return true;
+    }
+    else if (root->type == AST_continue)
+    {
+        *out_result = 0;
+        ctx->continue_triggered = true;
+        return true;
     }
     else if (root->type == AST_num)
     {
-        *out_result = root->number;
+        *out_result = root->num.value;
         return true;
     }
-    else if (root->is_unary_op)
+    else if (root->type == AST_unop)
     {
-        if (root->children.size() != 1) RETURN_INTERP_FAILURE;
-        if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+        if (!interp(root->unop.on, ctx, out_result)) RETURN_INTERP_FAILURE;
 
-        switch (root->op)
+        switch (root->unop.op)
         {
         case '+': return true;
         case '-': *out_result = -*out_result; return true;
@@ -152,35 +148,33 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         
         RETURN_INTERP_FAILURE;
     }
-    else if (root->is_binary_op)
+    else if (root->type == AST_binop)
     {
-        if (root->children.size() != 2) RETURN_INTERP_FAILURE;
-
         // || and && are special in C. They short-circuit evaluation.
         // * If left-side of || is true, right-side should NOT be evaluated.
         // * If left-side of && is false, right-side should NOT be evaluated.
-        if (root->op == eToken::logical_or)
+        if (root->binop.op == eToken::logical_or)
         {
-            if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->binop.left, ctx, out_result)) RETURN_INTERP_FAILURE;
             if (*out_result) return true;
-            if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->binop.right, ctx, out_result)) RETURN_INTERP_FAILURE;
             if (*out_result) *out_result = 1; // convert whatever the value of out_result is (could be -1 or whatever) to 1
             return true;
         }
-        if (root->op == eToken::logical_and)
+        if (root->binop.op == eToken::logical_and)
         {
-            if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->binop.left, ctx, out_result)) RETURN_INTERP_FAILURE;
             if (!*out_result) return true;
-            if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->binop.right, ctx, out_result)) RETURN_INTERP_FAILURE;
             if (*out_result) *out_result = 1; // convert whatever the value of out_result is (could be -1 or whatever) to 1
             return true;
         }
 
 
         int64_t lhs, rhs;
-        if (!interp(root->children[0], ctx, &lhs) || !interp(root->children[1], ctx, &rhs)) RETURN_INTERP_FAILURE;
+        if (!interp(root->binop.left, ctx, &lhs) || !interp(root->binop.right, ctx, &rhs)) RETURN_INTERP_FAILURE;
 
-        switch (root->op)
+        switch (root->binop.op)
         {
         case '%': *out_result = lhs % rhs; return true;
         case '*': *out_result = lhs * rhs; return true;
@@ -189,52 +183,48 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         case '/': *out_result = lhs / rhs; return true;
         case '<': *out_result = lhs < rhs; return true;
         case '>': *out_result = lhs > rhs; return true;
-        case eToken::logical_and: RETURN_INTERP_FAILURE; // never should have gotten here. See special cases above.
-        case eToken::logical_or: RETURN_INTERP_FAILURE; //never should have gotten here. See special cases above.
-        case eToken::logical_equal:            *out_result = lhs == rhs; return true;
-        case eToken::logical_not_equal:        *out_result = lhs != rhs; return true;
+        case eToken::logical_and:           RETURN_INTERP_FAILURE; // never should have gotten here. See special cases above.
+        case eToken::logical_or:            RETURN_INTERP_FAILURE; // never should have gotten here. See special cases above.
+        case eToken::logical_equal:         *out_result = lhs == rhs; return true;
+        case eToken::logical_not_equal:     *out_result = lhs != rhs; return true;
         case eToken::less_than_or_equal:    *out_result = lhs <= rhs; return true;
         case eToken::greater_than_or_equal: *out_result = lhs >= rhs; return true;
         }
 
         RETURN_INTERP_FAILURE;
     }
-    else if (root->is_if
-        || root->is_ternery_op)
+    else if (root->type == AST_if)
     {
-        if (root->children.size() == 2)
+        if (!interp(root->ifdef.condition, ctx, out_result)) RETURN_INTERP_FAILURE;
+        if (*out_result)
         {
-            // if(expr) statement;
-            if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-            if (*out_result)
-            {
-                if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
-            }
-            return true;
+            if (!interp(root->ifdef.if_true, ctx, out_result)) RETURN_INTERP_FAILURE;
         }
-        else if (root->children.size() == 3)
+        else if(root->ifdef.if_false)
         {
-            // if(expr) statement; else statement;
-            if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-            if (*out_result)
-            {
-                if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
-            }
-            else
-            {
-                if (!interp(root->children[2], ctx, out_result)) RETURN_INTERP_FAILURE;
-            }
-            return true;
+            if (!interp(root->ifdef.if_false, ctx, out_result)) RETURN_INTERP_FAILURE;
         }
-        RETURN_INTERP_FAILURE;
+        return true;
     }
-    else if (root->is_for)
+    else if (root->type == AST_terop)
     {
-        assert(root->children.size() == 4);
+        if (!interp(root->terop.condition, ctx, out_result)) RETURN_INTERP_FAILURE;
+        if (*out_result)
+        {
+            if (!interp(root->terop.if_true, ctx, out_result)) RETURN_INTERP_FAILURE;
+        }
+        else
+        {
+            if (!interp(root->terop.if_false, ctx, out_result)) RETURN_INTERP_FAILURE;
+        }
+        return true;
+    }
+    else if (root->type == AST_for)
+    {
         if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 
         // init
-        if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+        if (root->forloop.init && !interp(root->forloop.init, ctx, out_result)) RETURN_INTERP_FAILURE;
 
         assert(!ctx->return_triggered);
         assert(!ctx->break_triggered);
@@ -246,20 +236,19 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
             ctx->continue_triggered = false;
 
             // condition
-            if (!root->children[1]->is_empty)
+            if (root->forloop.condition)
             {
-                if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
+                if (!interp(root->forloop.condition, ctx, out_result)) RETURN_INTERP_FAILURE;
                 if (!*out_result) break;
             }
 
             // body
-            if (!interp(root->children[3], ctx, out_result)) RETURN_INTERP_FAILURE;
-            if (ctx->return_triggered
-                || ctx->break_triggered)
+            if (!interp(root->forloop.body, ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (ctx->return_triggered || ctx->break_triggered)
                 break;
 
             // update
-            if (!interp(root->children[2], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (root->forloop.update && !interp(root->forloop.update, ctx, out_result)) RETURN_INTERP_FAILURE;
         }
         --ctx->loop_depth;
         ctx->break_triggered = false;
@@ -268,9 +257,8 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
         return true;
     }
-    else if (root->is_while)
+    else if (root->type == AST_while)
     {
-        assert(root->children.size() == 2);
         if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 
         assert(!ctx->return_triggered);
@@ -283,17 +271,13 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
             ctx->continue_triggered = false;
 
             // condition
-            if (!root->children[0]->is_empty)
-            {
-                if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-                if (!*out_result)
-                    break;
-            }
+            if (!interp(root->whileloop.condition, ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!*out_result)
+                break;
 
             // body
-            if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
-            if (ctx->return_triggered
-                || ctx->break_triggered)
+            if (!interp(root->whileloop.body, ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (ctx->return_triggered || ctx->break_triggered)
                 break;
         }
         --ctx->loop_depth;
@@ -303,9 +287,8 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
         return true;
     }
-    else if (root->is_do_while)
+    else if (root->type == AST_dowhile)
     {
-        assert(root->children.size() == 2);
         if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
 
         assert(!ctx->return_triggered);
@@ -318,18 +301,14 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
             ctx->continue_triggered = false;
 
             // body
-            if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
-            if (ctx->return_triggered
-                || ctx->break_triggered)
+            if (!interp(root->whileloop.body, ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (ctx->return_triggered || ctx->break_triggered)
                 break;
 
             // condition
-            if (!root->children[1]->is_empty)
-            {
-                if (!interp(root->children[1], ctx, out_result)) RETURN_INTERP_FAILURE;
-                if (!*out_result)
-                    break;
-            }
+            if (!interp(root->whileloop.condition, ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!*out_result)
+                break;
         }
         --ctx->loop_depth;
         ctx->break_triggered = false;
@@ -367,13 +346,12 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 
         RETURN_INTERP_FAILURE;
     }
-    else if (root->is_block_list)
+    else if (root->type == AST_blocklist)
     {
         if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
-        if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
-        for (size_t i = 0; i < root->children.size(); ++i)
+        for (uint32_t i = 0; i < root->blocklist.size; ++i)
         {
-            if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->blocklist.nodes[i], ctx, out_result)) RETURN_INTERP_FAILURE;
             if (ctx->return_triggered)
                 break;
             if (ctx->break_triggered || ctx->continue_triggered)
@@ -391,15 +369,15 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         ctx->return_triggered = true;
         return true;
     }
-    else if (root->is_function)
+    else if (root->type == AST_fdef)
     {
         assert(ctx->return_triggered == false);
         assert(ctx->break_triggered == false);
         assert(ctx->continue_triggered == false);
         if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
-        for (size_t i = 0; i < root->children.size(); ++i)
+        for (uint32_t i = 0; i < root->fdef.body.size; ++i)
         {
-            if (!interp(root->children[i], ctx, out_result)) RETURN_INTERP_FAILURE;
+            if (!interp(root->fdef.body.nodes[i], ctx, out_result)) RETURN_INTERP_FAILURE;
             if (ctx->return_triggered)
                 break;
         }
@@ -408,9 +386,9 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 
         // HANDLE SPECIAL CASE: C standard says if main() does not have a return than it should return 0
-        if (root->children.size() == 0)
+        if (root->fdef.body.size == 0)
         {
-            if (root->func_name.nts == strings_insert_nts("main").nts)
+            if (root->fdef.name.nts == strings_insert_nts("main").nts)
             {
                 // technically valid by C standard.
                 *out_result = 0;
@@ -422,10 +400,10 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 
         return true;
     }
-    else if (root->is_program)
+    else if (root->type == AST_program)
     {
-        if (root->children.size() <= 0) RETURN_INTERP_FAILURE;
-        if (!interp(root->children[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+        assert(root->program.size == 1);
+        if (!interp(root->program.nodes[0], ctx, out_result)) RETURN_INTERP_FAILURE;
         return true;
     }
     

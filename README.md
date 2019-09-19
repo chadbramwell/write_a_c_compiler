@@ -72,6 +72,9 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
     * assumed order of parameters from AST to GEN/INTERP. This mostly came into play when writing the code for a new section by copying and pasting another section. (ex: while vs do-while. swapped condition and body but forgot to swap indicies into array)
     * ASM generated is really verbose and wasteful. I should take a hard look at redoing this generation. The output of the simplified "use rax for everything" has been frustrating to read the asm when I have bugs.
     * AST Nodes are simply new'ed and never tracked/freed. This could be faster and easier to reclaim memory if I wrote a slab allocator. I also setup nodes on the stack prior to copying to a new'ed chunk of memory with the (most likely misguided) thinking that stack + copying would be faster than allocating and writing to.
+* 9/19/2019 - STAGE 9 _INPROGRESS_
+  * Lex of comma done but need to get params/args and such working in AST.
+  * Took a tangent to rewrite my ASTNode data structure. Now it's a union of all my types and we no longer depend on std::vector.
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -80,6 +83,7 @@ A lot of work to be done optimizing. Some info:
 * [clang] does a system call to clang (not sure if slowness if from system() or clang itself)
 * [compare] similar boat to [clang] but does 3 system() calls. (clang .c, a.exe, my.exe)
 
+Numbers below in DEBUG build.
 with STAGE 7 (9/11/2019):
 ```
 Tests took 49773.24ms
@@ -105,6 +109,19 @@ Perf Results  [low,    high,   avg   ]
   run_exe:    [46.35ms, 78.04ms, 51.27ms]
   grnd_truth: [182.44ms, 804.20ms, 201.87ms]
   interp:     [0.00ms, 0.74ms, 0.03ms]
+```
+with STAGE 8 re-written with union of types instead of std::vector<> (9/19/2019):
+```
+Tests took 56345.18ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.06ms, 0.35ms, 0.11ms]
+  lex:        [0.00ms, 0.06ms, 0.01ms]
+  ast:        [0.01ms, 0.07ms, 0.01ms]
+  gen_asm:    [0.05ms, 0.37ms, 0.10ms]
+  gen_exe:    [111.79ms, 152.30ms, 125.46ms]
+  run_exe:    [46.75ms, 66.98ms, 52.80ms]
+  grnd_truth: [180.34ms, 770.66ms, 202.42ms]
+  interp:     [0.00ms, 0.10ms, 0.01ms]
 ```
 
 ## TODO (other than Stages)

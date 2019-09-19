@@ -71,6 +71,7 @@ bool lex(const LexInput& input, LexOutput& output)
         KW(continue)
     };
 #undef KW
+    const int kNumKeywords = 9;
 
     // store length of output buffer and wipe it's length for return value
     // code below will write to and increment end_output
@@ -240,7 +241,7 @@ bool lex(const LexInput& input, LexOutput& output)
             Token* token = push_id(&output, stream, token_end);
             stream = token_end;
 
-            for (int i = 0; i < _countof(keywords); ++i)
+            for (int i = 0; i < kNumKeywords; ++i)
             {
                 if (token->identifier.nts == keywords[i].nts)
                 {

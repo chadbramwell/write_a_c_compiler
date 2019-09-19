@@ -1,5 +1,7 @@
 #pragma once
 #include "lex.h"
+#include "ast_alloc.h"
+#include <vector> // TODO: remove. Last place used if for errors.
 
 // Below is an attempt at a simple AST generator. It's meant to be simple.
 // note: ASTNodes are dynamically allocated and never freed.
@@ -19,29 +21,33 @@ struct ASTError
 enum ASTType
 {
     AST_UNKNOWN,
+    AST_program,
+    AST_blocklist,
     AST_ret,
     AST_var,
     AST_num,
+    AST_fdef,
+    AST_fcall,
+    AST_if,
+    AST_for,
+    AST_while,
+    AST_dowhile,
+    AST_unop,
+    AST_binop,
+    AST_terop,
+    AST_break,
+    AST_continue,
+    AST_empty
 };
 
 struct ASTNode
 {
     ASTType type;
-    bool is_program;
-    bool is_function;
-    bool is_block_list; // many children
-    bool is_if; // expects 2-3 children: condition, true statement, [false statement]
-    bool is_for; // expects 4 children: init, condition, update, loop body
-    bool is_while; // expects 2 children: condition, loop body
-    bool is_do_while; // expects 2 children: loop body, condition
-    bool is_unary_op;
-    bool is_binary_op;
-    bool is_ternery_op; //?: (op ignored)
-    bool is_break_or_continue_op; //break or continue in op
-    bool is_empty;
-
     union
     {
+        ASTNodeArray program;
+        ASTNodeArray blocklist;
+
         struct {
             ASTNode* expression;
         } ret;
@@ -54,31 +60,57 @@ struct ASTNode
             ASTNode* assign_expression;
         } var;
 
-        eToken op;
-        str func_name;
-        int64_t number;
-    };
+        struct {
+            str name;
+            ASTNodeArray params;
+            ASTNodeArray body;
+        } fdef;
 
-    std::vector<ASTNode*> children; // these leak, but who cares. we do our job and then end the program.
+        struct {
+            str name;
+            ASTNodeArray args;
+        } fcall;
 
-    ASTNode()
-        : type(ASTType::AST_UNKNOWN)
-        , is_program(false)
-        , is_function(false)
-        , is_block_list(false)
-        , is_if(false)
-        , is_for(false)
-        , is_while(false)
-        , is_do_while(false)
-        , is_unary_op(false)
-        , is_binary_op(false)
-        , is_ternery_op(false)
-        , is_break_or_continue_op(false)
-        , is_empty(false)
-        , var({})
-    {
-    }
-};
+        struct {
+            ASTNode* condition;
+            ASTNode* if_true;
+            ASTNode* if_false;
+        } ifdef;
+
+        struct {
+            ASTNode* init;
+            ASTNode* condition;
+            ASTNode* update;
+            ASTNode* body;
+        } forloop;
+
+        struct {
+            ASTNode* condition;
+            ASTNode* body;
+        } whileloop;
+
+        struct {
+            eToken op;
+            ASTNode* on;
+        } unop;
+
+        struct {
+            eToken op;
+            ASTNode* left;
+            ASTNode* right;
+        } binop;
+
+        struct {
+            ASTNode* condition;
+            ASTNode* if_true;
+            ASTNode* if_false;
+        } terop;
+
+        struct {
+            int64_t value;
+        } num;
+    }; // end union
+}; // end struct ASTNode
 
 ASTNode* ast(TokenStream& tokens, std::vector<ASTError>& errors);
 void dump_ast(FILE* file, const ASTNode& self, int spaces_indent);

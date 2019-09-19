@@ -1,8 +1,7 @@
 #pragma once
 #include "strings.h"
-#include <inttypes.h>
-#include <cstdio>
-#include <vector>
+#include "inttypes.h"
+#include "stdio.h"
 
 // Below is an attempt at a simple lexer. It's not meant to be optimal.
 
