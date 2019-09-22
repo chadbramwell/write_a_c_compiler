@@ -7,7 +7,7 @@
 // QUICK HELP: https://en.cppreference.com/w/cpp/language/operator_precedence
 // (XX) <-- operator precendence
 //      <program> ::= { <function> | <declaration> }
-//      <function> ::= "int" <id> "(" ")" "{" { <block-item> } "}"
+//      <function> ::= "int" <id> "(" [ "int" <id> { "," "int" <id> } ] ")" ( "{" { <block-item> } "}" | ";" )
 //      <block-item> ::= <statement> | <declaration>
 //      <declaration> ::= "int" <id> [ = <exp> ] ";"
 //      <statement> ::= "return" <exp> ";"
@@ -99,12 +99,12 @@ ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-    // <function> ::= "int" <id> "(" ")" "{" { <block-item> } "}"
+    // <function> :: = "int" <id> "("["int" <id> { "," "int" <id> }] ")" ("{" { <block - item> } "}" | ";")
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode n = {};
-    n.type = AST_fdef;
+    str func_name;
+    ASTNodeArray func_params = {};
 
     // int
     if (!expect_and_advance(tokens, eToken::keyword_int, errors)) return NULL;
@@ -112,7 +112,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
         return NULL;
 
     // identifier
-    n.fdef.name = tokens.next->identifier;
+    func_name = tokens.next->identifier;
     if (tokens.next->type != eToken::identifier)
         return NULL;
     ++tokens.next;
@@ -127,7 +127,12 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     {
         ASTNode* decl = parse_declaration(tokens, errors);
         if (!decl) break;
-        astn_push(&n.fdef.params, decl);
+        if (decl->type != AST_var)
+        {
+            debug_break();
+            return NULL;
+        }
+        astn_push(&func_params, decl);
 
         if (tokens.next == tokens.end)
         {
@@ -139,11 +144,29 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
             ++tokens.next;
     }
 
-    // ){
+    // )
     if (!expect_and_advance(tokens, eToken::closed_parens, errors)) return NULL;
+
+    // either end with ; or we get a func body
+    if (tokens.next == tokens.end)
+        return NULL;
+    if (tokens.next->type == eToken::semicolon)
+    {
+        ++tokens.next;
+
+        io_tokens = tokens;
+        ASTNode* n = new ASTNode;
+        n->type = AST_fdecl;
+        n->fdecl.name = func_name;
+        n->fdecl.params = func_params;
+        return n;
+    }
+
+    // func body! {
     if (!expect_and_advance(tokens, eToken::open_curly, errors)) return NULL;
 
     // body
+    ASTNodeArray func_body = {};
     while (tokens.next != tokens.end)
     {
         ASTNode* bi = parse_block_item(tokens, errors);
@@ -154,14 +177,19 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
             break;
         }
 
-        astn_push(&n.fdef.body, bi);
+        astn_push(&func_body, bi);
     }
 
     // }
     if (!expect_and_advance(tokens, eToken::closed_curly, errors)) return NULL;
 
     io_tokens = tokens;
-    return new ASTNode(n);
+    ASTNode* n = new ASTNode;
+    n->type = AST_fdef;
+    n->fdef.name = func_name;
+    n->fdef.params = func_params;
+    n->fdef.body = func_body;
+    return n;
 }
 
 ASTNode* parse_function_call(TokenStream& io_tokens, std::vector<ASTError>& errors)
@@ -494,7 +522,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-    // <exp> ::= <id> "=" <exp> | <function-call> | <conditional-exp>
+    // <exp> ::= <id> "=" <exp> | <conditional-exp>
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
@@ -518,13 +546,6 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
         io_tokens = tokens;
         return new ASTNode(n);
-    }
-
-    ASTNode* f = parse_function_call(tokens, errors);
-    if (f)
-    {
-        io_tokens = tokens;
-        return f;
     }
 
     ASTNode* n = parse_conditional_exp(tokens, errors);
@@ -927,9 +948,17 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-    // <factor> ::= "(" <exp> ")" | <unary_op> <factor> | <int> | <id>
+    // <factor> ::= <function-call> | "(" <exp> ")" | <unary_op> <factor> | <int> | <id>
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
+
+    ASTNode* f = parse_function_call(tokens, errors);
+    if (f)
+    {
+        io_tokens = tokens;
+        return f;
+    }
+
 
     if (tokens.next->type == eToken::open_parens)
     {
@@ -1413,10 +1442,40 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
     {
         switch (expected_token)
         {
-        case '(': append_error(errors, tokens.next, "expected ("); break;
-        case ')': append_error(errors, tokens.next, "expected )"); break;
-        case ';': append_error(errors, tokens.next, "expected ;"); break;
-        case '}': append_error(errors, tokens.next, "expected }"); break;
+        case '!': append_error(errors, tokens.next, "expected '!'"); break;
+        case '%': append_error(errors, tokens.next, "expected '%'"); break;
+        case '&': append_error(errors, tokens.next, "expected '&'"); break;
+        case '(': append_error(errors, tokens.next, "expected '('"); break;
+        case ')': append_error(errors, tokens.next, "expected ')'"); break;
+        case '*': append_error(errors, tokens.next, "expected '*'"); break;
+        case '+': append_error(errors, tokens.next, "expected '+'"); break;
+        case ',': append_error(errors, tokens.next, "expected ','"); break;
+        case '-': append_error(errors, tokens.next, "expected '-'"); break;
+        case '/': append_error(errors, tokens.next, "expected '/'"); break;
+        case ':': append_error(errors, tokens.next, "expected ':'"); break;
+        case ';': append_error(errors, tokens.next, "expected ';'"); break;
+        case '<': append_error(errors, tokens.next, "expected '<'"); break;
+        case '=': append_error(errors, tokens.next, "expected '='"); break;
+        case '>': append_error(errors, tokens.next, "expected '>'"); break;
+        case '?': append_error(errors, tokens.next, "expected '?'"); break;
+        case '{': append_error(errors, tokens.next, "expected '{'"); break;
+        case '}': append_error(errors, tokens.next, "expected '}'"); break;
+        case '~': append_error(errors, tokens.next, "expected '~'"); break;
+        case eToken::logical_and:           append_error(errors, tokens.next, "expected '&&'"); break;
+        case eToken::logical_or:            append_error(errors, tokens.next, "expected '||'"); break;
+        case eToken::logical_equal:         append_error(errors, tokens.next, "expected '=='"); break;
+        case eToken::logical_not_equal:     append_error(errors, tokens.next, "expected '!='"); break;
+        case eToken::less_than_or_equal:    append_error(errors, tokens.next, "expected '<='"); break;
+        case eToken::greater_than_or_equal: append_error(errors, tokens.next, "expected '>='"); break;
+        case eToken::keyword_int:           append_error(errors, tokens.next, "expected 'int'"); break;
+        case eToken::keyword_return:        append_error(errors, tokens.next, "expected 'return'"); break;
+        case eToken::keyword_if:            append_error(errors, tokens.next, "expected 'if'"); break;
+        case eToken::keyword_else:          append_error(errors, tokens.next, "expected 'else'"); break;
+        case eToken::keyword_for:           append_error(errors, tokens.next, "expected 'for'"); break;
+        case eToken::keyword_while:         append_error(errors, tokens.next, "expected 'while'"); break;
+        case eToken::keyword_do:            append_error(errors, tokens.next, "expected 'do'"); break;
+        case eToken::keyword_break:         append_error(errors, tokens.next, "expected 'break'"); break;
+        case eToken::keyword_continue:      append_error(errors, tokens.next, "expected 'continue'"); break;
         default:
             debug_break();
             append_error(errors, tokens.next, "<UNKNOWN> token");

@@ -15,12 +15,14 @@ struct stack_var
 struct interp_context
 {
     stack_var stack[256]; // uses sentinal values for stack frames
-    int stack_top;
+    int64_t stack_top;
 
     int loop_depth;
     bool return_triggered;
     bool break_triggered;
     bool continue_triggered;
+
+    ASTNodeArray global_funcs;
 };
 
 bool push_frame(interp_context* ctx)
@@ -107,6 +109,58 @@ bool write_var(interp_context* ctx, const char* id, int64_t value)
     }
     debug_break();
     return false;
+}
+
+bool push_func_var(interp_context* ctx, int64_t value)
+{
+    if (ctx->stack_top >= 256)
+    {
+        debug_break();
+        return false; // no room
+    }
+
+    ctx->stack[ctx->stack_top].id = NULL;
+    ctx->stack[ctx->stack_top].value = value;
+    ++ctx->stack_top;
+
+    return true;
+}
+
+bool pop_func_frame(interp_context* ctx, int64_t count)
+{
+    if (ctx->stack_top - count < 0)
+    {
+        debug_break();
+        return false; // stack vars don't exist
+    }
+
+    // verify func frame
+    for (int64_t i = ctx->stack_top - count; i < ctx->stack_top; ++i)
+    {
+        if (ctx->stack[i].id != NULL)
+            return false; // all func vars should have an id of NULL. See push_func_var.
+    }
+
+    ctx->stack_top -= count;
+    return true;
+}
+
+bool read_func_var(interp_context* ctx, int64_t stack_offset, int64_t* value)
+{
+    if (ctx->stack_top - stack_offset < 0)
+    {
+        debug_break();
+        return false; // stack vars don't exist
+    }
+
+    if (ctx->stack[ctx->stack_top - stack_offset].id != NULL)
+    {
+        debug_break();
+        return false; // stack vars have id set to NULL (see push_func_var)
+    }
+
+    *value = ctx->stack[ctx->stack_top - stack_offset].value;
+    return true;
 }
 
 bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
@@ -402,8 +456,79 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
     }
     else if (root->type == AST_program)
     {
-        assert(root->program.size == 1);
-        if (!interp(root->program.nodes[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+        // hardcoded. find main. see also gen.cpp
+        // also: populate global funcs
+        str strMain = strings_insert_nts("main");
+        ASTNode* main = NULL;
+        for (uint32_t i = 0; i < root->program.size; ++i)
+        {
+            ASTNode* n = root->program.nodes[i];
+            if (n->type == AST_fdef)
+            {
+                astn_push(&ctx->global_funcs, n);
+                if(n->fdef.name.nts == strMain.nts)
+                    main = n;
+            }
+        }
+
+        if (!main) RETURN_INTERP_FAILURE;
+        if (!interp(main, ctx, out_result)) RETURN_INTERP_FAILURE;
+
+        // special case in standard. if main does not have a return, than it should return 0
+        if (!ctx->return_triggered)
+            *out_result = 0;
+
+        return true;
+    }
+    else if (root->type == AST_fcall)
+    {
+        assert(root->fcall.name.nts != strings_insert_nts("main").nts); // I'm not sure if recurisve calls to main is okay...
+
+        // special case (would normally be found when linking against stdandard library)
+        if (root->fcall.name.nts == strings_insert_nts("putchar").nts)
+        {
+            assert(root->fcall.args.size == 1);
+            if (!interp(root->fcall.args.nodes[0], ctx, out_result)) RETURN_INTERP_FAILURE;
+            *out_result = putchar((int)*out_result);
+            return true;
+        }
+
+        // find in global func list
+        ASTNode* func = NULL;
+        for (uint32_t i = 0; i < ctx->global_funcs.size; ++i)
+        {
+            ASTNode* potential = ctx->global_funcs.nodes[i];
+            assert(potential->type == AST_fdef);
+            if (potential->fdef.name.nts == root->fcall.name.nts)
+            {
+                func = ctx->global_funcs.nodes[i];
+                break;
+            }
+        }
+        if (!func) RETURN_INTERP_FAILURE;
+
+        // verify call is cool, probably should verify this somewhere else or modify the AST to have cycles...
+        if (root->fcall.args.size != func->fdef.params.size) RETURN_INTERP_FAILURE;
+
+        // interp each arg and push on stack (labeled as function definitions var names)
+        if (!push_frame(ctx)) RETURN_INTERP_FAILURE;
+        for (uint32_t i = 0; i < root->fcall.args.size; ++i)
+        {
+            if (!interp(root->fcall.args.nodes[i], ctx, out_result)) RETURN_INTERP_FAILURE;
+            //if (!push_func_var(ctx, *out_result)) RETURN_INTERP_FAILURE;
+            assert(func->fdef.params.nodes[i]->type == AST_var);
+            if (!push_var(ctx, func->fdef.params.nodes[i]->var.name.nts)) RETURN_INTERP_FAILURE;
+            if (!write_var(ctx, func->fdef.params.nodes[i]->var.name.nts, *out_result)) RETURN_INTERP_FAILURE;
+        }
+
+        // call func
+        if (!interp(func, ctx, out_result)) RETURN_INTERP_FAILURE;
+        assert(ctx->return_triggered);
+        ctx->return_triggered = false;
+
+        // pop all vars we pushed on the stack for the func call
+        //if (!pop_func_frame(ctx, root->fcall.args.size)) RETURN_INTERP_FAILURE;
+        if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
         return true;
     }
     
@@ -412,12 +537,6 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 
 bool interp_return_value(ASTNode* root, int64_t* out_result)
 {
-    interp_context ctx;
-    ctx.stack_top = 0;
-    ctx.loop_depth = 0;
-    ctx.return_triggered = false;
-    ctx.break_triggered = false;
-    ctx.continue_triggered = false;
-
+    interp_context ctx = {};
     return interp(root, &ctx, out_result);
 }

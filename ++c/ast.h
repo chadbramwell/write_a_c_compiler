@@ -26,6 +26,7 @@ enum ASTType
     AST_ret,
     AST_var,
     AST_num,
+    AST_fdecl,
     AST_fdef,
     AST_fcall,
     AST_if,
@@ -59,6 +60,11 @@ struct ASTNode
             str name;
             ASTNode* assign_expression;
         } var;
+
+        struct {
+            str name;
+            ASTNodeArray params;
+        } fdecl;
 
         struct {
             str name;

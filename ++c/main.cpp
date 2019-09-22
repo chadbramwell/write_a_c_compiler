@@ -9,6 +9,7 @@
 
 #include "string.h"
 #include "stdio.h"
+#include "stdlib.h"
 
 enum TestType : uint8_t
 {
@@ -373,7 +374,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
 
             if (interp_result != clang_ground_truth)
             {
-                printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 "vs Ground Truth: %d\n", 
+                printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 " vs Ground Truth: %d\n", 
                     file_path, interp_result, clang_ground_truth);
                 dump(tt | TEST_DUMP_ON, lexin, lexout, root, NULL);
                 debug_break();
@@ -568,54 +569,92 @@ int main(int argc, char** argv)
         if (0 != strcmp(argv[i], "-test"))
             continue;
 
+        char test_single = 0;
+        if (i + 1 < argc)
+        {
+            test_single = *argv[i + 1];
+            if (test_single < '1' || test_single > '9')
+                test_single = 0; // fail
+            else
+                test_single = test_single - '0';
+        }
+
+
         perf_numbers perf;
         
         Timer timer;
         timer.start();
 
-        Test(TEST_LEX, &perf, "../stage_1/invalid/");
-        Test(TEST_LEX, &perf, "../stage_2/invalid/");
-        Test(TEST_LEX, &perf, "../stage_3/invalid/");
-        Test(TEST_LEX, &perf, "../stage_4/invalid/");
-        Test(TEST_LEX, &perf, "../stage_5/invalid/");
-        Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
-        Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
-        Test(TEST_LEX, &perf, "../stage_7/invalid/");
-        Test(TEST_LEX, &perf, "../stage_8/invalid/");
-
-        Test(TEST_LEX, &perf, "../stage_1/valid/");
-        Test(TEST_LEX, &perf, "../stage_2/valid/");
-        Test(TEST_LEX, &perf, "../stage_3/valid/");
-        Test(TEST_LEX, &perf, "../stage_4/valid/");
-        Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
-        Test(TEST_LEX, &perf, "../stage_5/valid/");
-        Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
-        Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
-        Test(TEST_LEX, &perf, "../stage_7/valid/");
-        Test(TEST_LEX, &perf, "../stage_8/valid/");
-
-        Test(TEST_INTERP, &perf, "../stage_1/valid/");
-        Test(TEST_INTERP, &perf, "../stage_2/valid/");
-        Test(TEST_INTERP, &perf, "../stage_3/valid/");
-        Test(TEST_INTERP, &perf, "../stage_4/valid/");
-        Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
-        Test(TEST_INTERP, &perf, "../stage_5/valid/");
-        Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
-        Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
-        Test(TEST_INTERP, &perf, "../stage_7/valid/");
-        Test(TEST_INTERP, &perf, "../stage_8/valid/");
-
-
-        Test(TEST_GEN, &perf, "../stage_1/valid/");
-        Test(TEST_GEN, &perf, "../stage_2/valid/");
-        Test(TEST_GEN, &perf, "../stage_3/valid/");
-        Test(TEST_GEN, &perf, "../stage_4/valid/");
-        Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
-        Test(TEST_GEN, &perf, "../stage_5/valid/");
-        Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
-        Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
-        Test(TEST_GEN, &perf, "../stage_7/valid/");
-        Test(TEST_GEN, &perf, "../stage_8/valid/");
+        switch (test_single)
+        {
+        case 0: // test all
+            printf("=== RUNNING ALL TESTS\n");
+        case 1:
+            Test(TEST_LEX, &perf, "../stage_1/valid/");
+            Test(TEST_LEX, &perf, "../stage_1/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_1/valid/");
+            Test(TEST_GEN, &perf, "../stage_1/valid/");
+            if (test_single != 0) break;
+        case 2:
+            Test(TEST_LEX, &perf, "../stage_2/valid/");
+            Test(TEST_LEX, &perf, "../stage_2/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_2/valid/");
+            Test(TEST_GEN, &perf, "../stage_2/valid/");
+            if (test_single != 0) break;
+        case 3:
+            Test(TEST_LEX, &perf, "../stage_3/valid/");
+            Test(TEST_LEX, &perf, "../stage_3/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_3/valid/");
+            Test(TEST_GEN, &perf, "../stage_3/valid/");
+            if (test_single != 0) break;
+        case 4:
+            Test(TEST_LEX, &perf, "../stage_4/valid/");
+            Test(TEST_LEX, &perf, "../stage_4/valid_skip_on_failure/");
+            Test(TEST_LEX, &perf, "../stage_4/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_4/valid/");
+            Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
+            Test(TEST_GEN, &perf, "../stage_4/valid/");
+            Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
+            if (test_single != 0) break;
+        case 5:
+            Test(TEST_LEX, &perf, "../stage_5/valid/");
+            Test(TEST_LEX, &perf, "../stage_5/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_5/valid/");
+            Test(TEST_GEN, &perf, "../stage_5/valid/");
+            if (test_single != 0) break;
+        case 6:
+            Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
+            Test(TEST_LEX, &perf, "../stage_6/valid/expression/");
+            Test(TEST_LEX, &perf, "../stage_6/invalid/statement/");
+            Test(TEST_LEX, &perf, "../stage_6/invalid/expression/");
+            Test(TEST_INTERP, &perf, "../stage_6/valid/statement/");
+            Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
+            Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
+            Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
+            if (test_single != 0) break;
+        case 7:
+            Test(TEST_LEX, &perf, "../stage_7/valid/");
+            Test(TEST_LEX, &perf, "../stage_7/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_7/valid/");
+            Test(TEST_GEN, &perf, "../stage_7/valid/");
+            if (test_single != 0) break;
+        case 8:
+            Test(TEST_LEX, &perf, "../stage_8/valid/");
+            Test(TEST_LEX, &perf, "../stage_8/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_8/valid/");
+            Test(TEST_GEN, &perf, "../stage_8/valid/");
+            if (test_single != 0) break;
+        case 9:
+            Test(TEST_LEX, &perf, "../stage_9/valid/");
+            Test(TEST_LEX, &perf, "../stage_9/invalid/");
+            Test(TEST_INTERP, &perf, "../stage_9/valid/");
+            Test(TEST_GEN, &perf, "../stage_9/valid/");
+            if (test_single != 0) break;
+        default:
+            printf("Invalid Test #. Quitting.\n");
+            debug_break();
+            return 1;
+        }
 
         timer.end();
         printf("Tests took %.2fms\n", timer.milliseconds());

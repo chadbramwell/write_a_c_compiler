@@ -123,6 +123,8 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
     if (n->type == AST_fdef)
     {
+        assert(n->fdef.params.size == 0); // TODO: handle params
+
         bool ok = push_stack_frame(ctx);
         if (!ok)
         {
