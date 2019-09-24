@@ -7,15 +7,26 @@ struct loop_label
     const char* update_label; // for continue/end of body
 };
 
+struct stack_var
+{
+    str name;
+    int64_t offset; // negative if local var, positive if function argument (i.e. cdecl convention)
+};
+
+struct stack_frame
+{
+    stack_var* vars; // TODO: Fix Memory Leak here.
+    int64_t num_vars;
+};
+
 struct gen_ctx
 {
     FILE* out;
     uint64_t label_index; // every label needs to be unique, this is appended to every label to ensure that's the case.
 
     // stack data
-    str stack_frames[256][256];
-    uint8_t sv_frame_len[256];
-    uint8_t sv_num_frames;
+    stack_frame stack_frames[256];
+    int64_t num_frames;
 
     // labels for break/continue/return inside of loop
     std::vector<loop_label> loop_labels;
@@ -23,90 +34,78 @@ struct gen_ctx
 
 bool push_stack_frame(gen_ctx* ctx)
 {
-    if (ctx->sv_num_frames == 256)
+    if (ctx->num_frames == 256)
     {
         debug_break(); // error! out of memory!
         return false;
     }
 
-    ctx->sv_frame_len[ctx->sv_num_frames] = 0;
-    ++ctx->sv_num_frames;
+    ctx->stack_frames[ctx->num_frames].vars = NULL;
+    ctx->stack_frames[ctx->num_frames].num_vars = 0;
+    ++ctx->num_frames;
     return true;
 }
 
 bool pop_stack_frame(gen_ctx* ctx)
 {
-    if (ctx->sv_num_frames == 0)
+    if (ctx->num_frames == 0)
     {
         debug_break(); // error! too many pops!
         return false;
     }
 
-    --ctx->sv_num_frames;
+    --ctx->num_frames;
     return true;
 }
 
-bool push_vars(gen_ctx* ctx, const str* const vars, uint8_t num_vars)
+bool push_local_var(gen_ctx* ctx, str name)
 {
-    if (ctx->sv_num_frames == 0)
+    if (ctx->num_frames == 0)
     {
         debug_break(); // error! push a stack frame first!
         return false;
     }
 
-    uint8_t sf_index = ctx->sv_num_frames - 1;
+    stack_frame* frame = &ctx->stack_frames[ctx->num_frames - 1];
 
-    if (ctx->sv_frame_len[sf_index] >= 256 - num_vars)
-    {
-        debug_break(); // error! no more room for var on stack!
-        return false;
-    }
-
-    str* sf_iter = ctx->stack_frames[ctx->sv_num_frames - 1];
-    str* sf_end = sf_iter + ctx->sv_frame_len[ctx->sv_num_frames - 1];
-    const str* vars_iter = vars;
-    const str* vars_end = vars + num_vars;
-
-    // make sure each var is not already on stack
-    for(; sf_iter != sf_end; ++sf_iter)
-    {
-        for(vars_iter = vars; vars_iter != vars_end; ++vars_iter)
-        {
-            if (sf_iter->nts == vars_iter->nts)
-            {
-                return false;
-            }
-        }
-    }
-    
-    memcpy(sf_end, vars, sizeof(vars[0]) * num_vars);
-    ctx->sv_frame_len[sf_index] += num_vars;
+    frame->vars = (stack_var*)realloc(frame->vars, size_t((frame->num_vars + 1) * sizeof(stack_var)));
+    frame->vars[frame->num_vars].name = name;
+    frame->vars[frame->num_vars].offset = (frame->num_vars + 1) * 8;
+    frame->num_vars += 1;
     return true;
 }
 
-uint64_t get_stack_offset(gen_ctx* ctx, const str& s)
+bool push_var(gen_ctx* ctx, str name, int64_t offset)
 {
-    for (int64_t i = ctx->sv_num_frames - 1; i >= 0; --i)
+    if (ctx->num_frames == 0)
     {
-        const str* const sf_start = ctx->stack_frames[i];
-        const str* sf_iter = sf_start;
-        const str* const sf_end = sf_iter + ctx->sv_frame_len[i];
+        debug_break(); // error! push a stack frame first!
+        return false;
+    }
 
-        while (sf_iter != sf_end)
+    stack_frame* frame = &ctx->stack_frames[ctx->num_frames - 1];
+
+    frame->vars = (stack_var*)realloc(frame->vars, size_t((frame->num_vars + 1) * sizeof(stack_var)));
+    frame->vars[frame->num_vars].name = name;
+    frame->vars[frame->num_vars].offset = offset;
+    frame->num_vars += 1;
+    return true;
+}
+
+int64_t get_stack_offset(gen_ctx* ctx, str s)
+{
+    for (stack_frame* frame = ctx->stack_frames + ctx->num_frames;
+        frame >= ctx->stack_frames;
+        --frame)
+    {
+        for(stack_var* var = frame->vars + frame->num_vars;
+            var >= frame->vars;
+            --var)
         {
-            if (sf_iter->nts == s.nts)
+            if (var->name.nts == s.nts)
             {
-                int64_t offset = (1 + sf_iter - sf_start) * 8;
-                --i;
-                while (i >= 0)
-                {
-                    offset += ctx->sv_frame_len[i] * 8;
-                    --i;
-                }
-
-                return offset;
+                return var->offset;
             }
-            ++sf_iter;
         }
     }
 
@@ -121,10 +120,23 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
     if (n->type == AST_empty)
         return true;
 
+    if (n->type == AST_fcall)
+    {
+        // cdecl calling convention, push args in reverse order onto stack
+        for (int32_t i = int32_t(n->fcall.args.size-1); i >= 0; --i)
+        {
+            if (!gen_asm_node(ctx, n->fcall.args.nodes[i]))
+                return false;
+            fprintf(ctx->out, "  push %%rax\n");
+        }
+
+        fprintf(ctx->out, "  callq %s\n", n->fcall.name.nts);
+        fprintf(ctx->out, "  add $%" PRIu32 ", %%rsp\n", n->fcall.args.size * 8);
+        return true;
+    }
+
     if (n->type == AST_fdef)
     {
-        assert(n->fdef.params.size == 0); // TODO: handle params
-
         bool ok = push_stack_frame(ctx);
         if (!ok)
         {
@@ -132,9 +144,21 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             return false;
         }
 
+        bool is_main = n->fdef.name.nts == strings_insert_nts("main").nts;
+
         // function prologue
-        fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
-        fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
+        if (!is_main)
+        {
+            fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
+            fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
+        }
+
+        // cdecl calling convention
+        for (uint32_t i = 0; i < n->fdef.params.size; ++i)
+        {
+            if (!push_var(ctx, n->fdef.params.nodes[i]->var.name, (i+2)*8)) // +1 because we are indexing from 0. +1 because the first location of rbp is storing the ret address??
+                return false;
+        }
 
         for(uint32_t i = 0; i < n->fdef.body.size; ++i)
         {
@@ -143,18 +167,13 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         }
         
         // Handle main() that does not have a return statement.
-        if (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size-1]->type != AST_ret)
+        if (is_main &&
+            (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size-1]->type != AST_ret))
         {
             // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
             //  If a function other than main does not have a return statement than it is undefined behavior.
             //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
-            assert(n->fdef.name.nts == strings_insert_nts("main").nts);
             fprintf(ctx->out, "  mov $0, %%rax\n");
-
-            // function epilogue
-            fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
-            fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
-            fprintf(ctx->out, "  ret\n");
         }
 
         ok = pop_stack_frame(ctx);
@@ -164,22 +183,12 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
     if (n->type == AST_blocklist)
     {
-        bool ok = push_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         for (uint32_t i = 0; i < n->blocklist.size; ++i)
         {
             if (!gen_asm_node(ctx, n->blocklist.nodes[i]))
                 return false;
         }
-
-        ok = pop_stack_frame(ctx);
-        assert(ok);
-        return ok;
+        return true;
     }
 
     if (n->type == AST_ret)
@@ -199,7 +208,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
     {
         if (n->var.is_variable_declaration)
         {
-            bool ok = push_vars(ctx, &n->var.name, 1);
+            bool ok = push_local_var(ctx, n->var.name);
             if (!ok)
             {
                 debug_break();
@@ -215,13 +224,13 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             uint64_t stack_offset = get_stack_offset(ctx, n->var.name);
             if (!stack_offset)
                 return false;
-            fprintf(ctx->out, "  mov %%rax, -%" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var.name.nts);
+            fprintf(ctx->out, "  mov %%rax, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var.name.nts);
             return true;
         }
 
         if (n->var.is_variable_usage)
         {
-            fprintf(ctx->out, "  mov -%" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var.name), n->var.name.nts);
+            fprintf(ctx->out, "  mov %" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var.name), n->var.name.nts);
             return true;
         }
         
@@ -292,13 +301,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         ll.update_label = label_for_update;
         ctx->loop_labels.push_back(ll);
 
-        bool ok = push_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         // init
         if (n->forloop.init)
         {
@@ -332,13 +334,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         // end, jump here on break or return
         fprintf(ctx->out, "%s:\n", label_for_end);
 
-        ok = pop_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         ctx->loop_labels.pop_back();
 
         return true;
@@ -356,13 +351,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         ll.update_label = label_while;
         ctx->loop_labels.push_back(ll);
 
-        bool ok = push_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         // condition - jump here at end of body or on continue
         fprintf(ctx->out, "%s:\n", label_while);
         if (!gen_asm_node(ctx, n->whileloop.condition))
@@ -377,13 +365,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
         // end, jump here on break or return
         fprintf(ctx->out, "%s:\n", label_while_end);
-
-        ok = pop_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
 
         ctx->loop_labels.pop_back();
 
@@ -404,13 +385,6 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         ll.update_label = label_update_do_while;
         ctx->loop_labels.push_back(ll);
 
-        bool ok = push_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         // loop start - jump here after checking condition
         fprintf(ctx->out, "%s:\n", label_do_while_start);
 
@@ -428,14 +402,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
         // end, jump here on break or return
         fprintf(ctx->out, "%s:\n", label_do_while_end);
-
-        ok = pop_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
+        
         ctx->loop_labels.pop_back();
 
         return true;
@@ -637,7 +604,7 @@ bool gen_asm(FILE* file, const AsmInput& input)
     gen_ctx ctx;
     ctx.out = file;
     ctx.label_index = 0;
-    ctx.sv_num_frames = 0;
+    ctx.num_frames = 0;
 
     /*
         .text
@@ -664,7 +631,8 @@ bool gen_asm(FILE* file, const AsmInput& input)
 
     for (uint32_t i = 0; i < input.root->program.size; ++i)
     {
-        if (input.root->program.nodes[i]->type == AST_fdef)
+        ASTNode* n = input.root->program.nodes[i];
+        if (n->type == AST_fdef && n->fdef.name.nts == strings_insert_nts("main").nts)
         {
             main = input.root->program.nodes[i];
             break;
@@ -677,8 +645,30 @@ bool gen_asm(FILE* file, const AsmInput& input)
         return false;
     }
 
-    fprintf(ctx.out, "  .globl %s\n", main->fdef.name.nts);
-    fprintf(ctx.out, "%s:\n", main->fdef.name.nts);
-    //fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
-    return gen_asm_node(&ctx, main);
+    // expose all function defs as globals
+    //for (uint32_t i = 0; i < input.root->program.size; ++i)
+    //{
+    //    if (input.root->program.nodes[i]->type == AST_fdef)
+    //    {
+            fprintf(ctx.out, "  .globl %s\n", main->fdef.name.nts);
+    //    }
+    //}
+
+    for (uint32_t i = 0; i < input.root->program.size; ++i)
+    {
+        ASTNode* n = input.root->program.nodes[i];
+        if (n->type == AST_fdef)
+        {
+            fprintf(ctx.out, "%s:\n", n->fdef.name.nts);
+            if (n == main)
+            {
+                fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
+            }
+            if (!gen_asm_node(&ctx, n))
+                return false;
+        }
+    }
+    
+    
+    return true;
 }

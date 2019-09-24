@@ -812,6 +812,15 @@ int main(int argc, char** argv)
         fprintf(stdout, "==gen_asm success!==[\n");
         gen_asm(stdout, asm_in);
         fprintf(stdout, "\n]\n");
+
+        fprintf(stdout, "Clang's ASM==[\n");
+
+        char temp[260];
+        sprintf_s(temp, "clang -S %s -o%s", p.original, p.asm_path);
+        assert(0 == system(temp));
+        LexInput temp2;
+        assert(read_file_into_lex_input(p.asm_path, &temp2));
+        fprintf(stdout, "%*s\n", int(temp2.length), temp2.stream);
     }
     fclose(asm_test_file);
 

@@ -1252,9 +1252,34 @@ ASTNode* ast(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
 void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
 {
-    if (self.type == AST_fdef)
+    if (self.type == AST_fdecl)
     {
-        fprintf(file, "%*cFUNC %s %s()==[\n", spaces_indent, ' ', "INT", self.fdef.name.nts);
+        fprintf(file, "%*cFDECL %s\n", spaces_indent, ' ', self.fdecl.name.nts);
+        for (uint32_t i = 0; i < self.fcall.args.size; ++i)
+        {
+            dump_ast(file, *self.fdecl.params.nodes[i], spaces_indent + 2);
+        }
+        fprintf(file, "%*c)\n", spaces_indent, ' ');
+        return;
+    }
+    else if (self.type == AST_fcall)
+    {
+        fprintf(file, "%*cCALL %s(\n", spaces_indent, ' ', self.fcall.name.nts);
+        for (uint32_t i = 0; i < self.fcall.args.size; ++i)
+        {
+            dump_ast(file, *self.fcall.args.nodes[i], spaces_indent + 2);
+        }
+        fprintf(file, "%*c)\n", spaces_indent, ' ');
+        return;
+    }
+    else if (self.type == AST_fdef)
+    {
+        fprintf(file, "%*cFUNC %s %s(\n", spaces_indent, ' ', "INT", self.fdef.name.nts);
+        for (uint32_t i = 0; i < self.fdef.params.size; ++i)
+        {
+            dump_ast(file, *self.fdef.params.nodes[i], spaces_indent + 2);
+        }
+        fprintf(file, "%*c)==[\n", spaces_indent, ' ');
         for (uint32_t i = 0; i < self.fdef.body.size; ++i)
         {
             dump_ast(file, *self.fdef.body.nodes[i], spaces_indent + 2);
