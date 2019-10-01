@@ -40,19 +40,47 @@ bool push_stack_frame(gen_ctx* ctx)
         return false;
     }
 
+    // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
+    // is super funky. there's a "shadow stack" we have to account for.
+
+    if (ctx->num_frames > 0)
+    {
+        fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
+        fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
+    }
+    fprintf(ctx->out, "  subq $32, %%rsp # make room for \"shadow stack\" on windows\n");
+
     ctx->stack_frames[ctx->num_frames].vars = NULL;
     ctx->stack_frames[ctx->num_frames].num_vars = 0;
     ++ctx->num_frames;
     return true;
 }
 
-bool pop_stack_frame(gen_ctx* ctx)
+enum ePopType {
+    pop_func_def,
+    pop_ret,
+    pop_func_def_no_shadow,
+};
+
+bool pop_stack_frame(gen_ctx* ctx, ePopType pt)
 {
     if (ctx->num_frames == 0)
     {
         debug_break(); // error! too many pops!
         return false;
     }
+
+    if (pt != pop_func_def_no_shadow)
+        fprintf(ctx->out, "  addq $32, %%rsp # restore \"shadow stack\" for windows\n");
+
+    if (ctx->num_frames > 1)
+    {
+        fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
+        fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
+    }
+
+    if (pt == pop_ret)
+        return true;
 
     --ctx->num_frames;
     return true;
@@ -71,12 +99,15 @@ bool push_local_var(gen_ctx* ctx, str name)
     frame->vars = (stack_var*)realloc(frame->vars, size_t((frame->num_vars + 1) * sizeof(stack_var)));
     frame->vars[frame->num_vars].name = name;
     frame->vars[frame->num_vars].offset = (frame->num_vars + 1) * 8;
+    frame->vars[frame->num_vars].offset += 32; // +32 = shadow stack
     frame->num_vars += 1;
     return true;
 }
 
 bool push_var(gen_ctx* ctx, str name, int64_t offset)
 {
+    offset += 32;  // +32 = shadow stack
+
     if (ctx->num_frames == 0)
     {
         debug_break(); // error! push a stack frame first!
@@ -92,7 +123,7 @@ bool push_var(gen_ctx* ctx, str name, int64_t offset)
     return true;
 }
 
-int64_t get_stack_offset(gen_ctx* ctx, str s)
+int64_t get_stack_offset(gen_ctx* ctx, str s) // TODO??? : update this with what we know about function calling convention: https://en.wikipedia.org/wiki/X86_calling_conventions  namely that first four params passed into func are rcx, rdx, r8 and r9
 {
     for (stack_frame* frame = ctx->stack_frames + ctx->num_frames;
         frame >= ctx->stack_frames;
@@ -153,12 +184,10 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         }
 
         bool is_main = n->fdef.name.nts == strings_insert_nts("main").nts;
-
-        fprintf(ctx->out, "  subq    $32, %%rsp\n"); // move past "shadow stack" (calling convention on x64 windows)
-        // BUG BUG BUG HERE! If main ever 
-        //fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
-        //fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
-
+        if (is_main)
+        {
+            fprintf(ctx->out, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
+        }
 
         // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
         // rcx, rdx, r8, r9, then spill into stack
@@ -188,19 +217,31 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         }
         
         // Handle main() that does not have a return statement.
-        if (is_main &&
-            (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size-1]->type != AST_ret))
+        if (is_main)
         {
-            // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
-            //  If a function other than main does not have a return statement than it is undefined behavior.
-            //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
-            fprintf(ctx->out, "  mov $0, %%rax\n");
-            fprintf(ctx->out, "  addq $32, %%rsp\n"); // replace shadow stack.
-            fprintf(ctx->out, "  ret\n");
+            if (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size - 1]->type != AST_ret)
+            {
+                // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
+                //  If a function other than main does not have a return statement than it is undefined behavior.
+                //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
+                fprintf(ctx->out, "  mov $0, %%rax\n");
+                ok = pop_stack_frame(ctx, pop_func_def);
+                assert(ok);
+                fprintf(ctx->out, "  ret\n");
+            }
+            else
+            {
+                ok = pop_stack_frame(ctx, pop_func_def_no_shadow);
+                assert(ok);
+            }
+        }
+        else
+        {
+            ok = pop_stack_frame(ctx, pop_func_def);
+            assert(ok);
         }
 
-        ok = pop_stack_frame(ctx);
-        assert(ok);
+        
         return ok;
     }
 
@@ -219,13 +260,11 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         if (n->ret.expression && !gen_asm_node(ctx, n->ret.expression))
             return false;
 
-        // function epilogue
-        fprintf(ctx->out, "  addq $32, %%rsp\n"); // replace shadow stack.
-        fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
-        fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
+        bool ok = pop_stack_frame(ctx, pop_ret);
+        assert(ok);
         fprintf(ctx->out, "  ret\n");
 
-        return true;
+        return ok;
     }
 
     if (n->type == AST_var)
@@ -683,10 +722,7 @@ bool gen_asm(FILE* file, const AsmInput& input)
         ASTNode* n = input.root->program.nodes[i];
         if (n->type == AST_fdef)
         {
-            if (n == main)
-            {
-                //fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
-            }
+            
             if (!gen_asm_node(&ctx, n))
                 return false;
         }

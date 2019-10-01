@@ -220,6 +220,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
         ++test_count;
 
         const char* file_path = dfpath(dir);
+        printf("> %s\n", file_path);
 
         ///// LEX
         LexInput lexin;
@@ -353,7 +354,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
             if (clang_ground_truth != our_result)
             {
                 dump(tt | TEST_DUMP_ON, lexin, lexout, root, &asm_in);
-                printf("Ground Truth %d does not match our result %d\n", clang_ground_truth, our_result);
+                printf("Ground Truth [%d] does not match our result [%d]\n", clang_ground_truth, our_result);
                 debug_break();
             }
             update_perf(&perf->run_exe, timer.milliseconds());
@@ -875,8 +876,13 @@ int main(int argc, char** argv)
     else
     {
         int our_result = system(p.exe_path);
-        assert(our_result == ground_truth);
-        if(debug_print) printf("Our Result: %d\nGround Truth Result: %d\n", our_result, ground_truth);
+        if (our_result != ground_truth)
+        {
+            printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
+            debug_break();
+        }
+        else
+            printf("Return value of program: [%d]\n", our_result);
     }
     return clang_error;
 }
