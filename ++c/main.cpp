@@ -124,18 +124,29 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
 {
     if (tt & TEST_DUMP_ON)
     {
-        printf("===RAW FILE [%s]===\n", lexin.filename);
+        printf("===DEBUG INFO FOR [%s]===\n", lexin.filename);
+        printf("=== RAW FILE ===\n");
         fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
-        printf("\n===END RAW FILE===\n");
+        printf("\n");
         if ((tt & TEST_LEX) == TEST_LEX) {
-            printf("LEX:"); dump_lex(stdout, lexout); printf("\n");
+            printf("=== LEX ===\n");
+            dump_lex(stdout, lexout);
+            printf("\n");
         }
         if ((tt & TEST_AST) == TEST_AST)
         {
+            printf("=== AST ===\n");
             dump_ast(stdout, *root, 0);
             //dump_ast_errors(stdout, )
+            printf("\n");
         }
-        if((tt & TEST_GEN) == TEST_GEN) gen_asm(stdout, *asm_in);
+        if ((tt & TEST_GEN) == TEST_GEN)
+        {
+            printf("=== GEN ASSEMBLY ===\n");
+            gen_asm(stdout, *asm_in);
+            printf("\n");
+        }
+        printf("=== END DEBUG INFO ===\n");
     }
 }
 

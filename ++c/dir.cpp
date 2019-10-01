@@ -14,14 +14,52 @@ struct DirectoryIter
 
 #define TO_STR(x) #x
 
+bool is_slash(char c)
+{
+    return c == '\\' || c == '/';
+}
+
 DirectoryIter* dopen(const char* path, const char* filter)
 {
     DirectoryIter* dir_ptr = (DirectoryIter*)malloc(sizeof(DirectoryIter));
     DirectoryIter& dir = *dir_ptr;
     dir.dpath_cutoff_of_fpath = strlen(path);
     memcpy(dir.fpath, path, dir.dpath_cutoff_of_fpath);
-    if (dir.fpath[dir.dpath_cutoff_of_fpath-1] != '\\' &&
-        dir.fpath[dir.dpath_cutoff_of_fpath-1] != '/')
+
+    // support .. in middle of path
+    // we have to do this because FindFirstFile only supports .. at start of path. dumb.
+    {
+        char* end = dir.fpath + dir.dpath_cutoff_of_fpath;
+        char* write_location = dir.fpath + 2; // +2 to skip past .. if it happens to be at beginning of path
+        char* read_location = dir.fpath + 2;
+
+        for (; read_location != end;)
+        {
+            if (read_location + 1 < end &&
+                read_location[0] == '.' &&
+                read_location[1] == '.')
+            {
+                write_location -= 2; // go back past . and presumably slash
+                while (write_location > dir.fpath && !is_slash(*write_location))
+                    --write_location;
+                assert(write_location > dir.fpath);
+                assert(is_slash(*write_location));
+                
+                read_location += 2;
+                continue;
+            }
+            if (write_location != read_location)
+            {
+                *write_location = *read_location;
+            }
+            ++write_location;
+            ++read_location;
+        }
+
+        dir.dpath_cutoff_of_fpath = write_location - dir.fpath;
+    }
+
+    if (!is_slash(dir.fpath[dir.dpath_cutoff_of_fpath-1]))
     {
         dir.fpath[dir.dpath_cutoff_of_fpath] = '/';
         ++dir.dpath_cutoff_of_fpath;

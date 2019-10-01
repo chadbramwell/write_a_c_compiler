@@ -122,21 +122,29 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
     if (n->type == AST_fcall)
     {
-        // cdecl calling convention, push args in reverse order onto stack
-        for (int32_t i = int32_t(n->fcall.args.size-1); i >= 0; --i)
+        // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
+        // rcx, rdx, r8, r9, then spill into stack
+        uint32_t numArgs = n->fcall.args.size;
+        assert(numArgs >= 0 && numArgs <= 2);
+        if (numArgs == 1 || numArgs == 2)
         {
-            if (!gen_asm_node(ctx, n->fcall.args.nodes[i]))
-                return false;
-            fprintf(ctx->out, "  push %%rax\n");
+            if (!gen_asm_node(ctx, n->fcall.args.nodes[0])) return false;
+            fprintf(ctx->out, "  mov %%rax, %%rcx\n");
+        }
+        if (numArgs == 2)
+        {
+            if (!gen_asm_node(ctx, n->fcall.args.nodes[1])) return false;
+            fprintf(ctx->out, "  mov %%rax, %%rdx\n");
         }
 
         fprintf(ctx->out, "  callq %s\n", n->fcall.name.nts);
-        fprintf(ctx->out, "  add $%" PRIu32 ", %%rsp\n", n->fcall.args.size * 8);
         return true;
     }
 
     if (n->type == AST_fdef)
     {
+        fprintf(ctx->out, "%s:\n", n->fdef.name.nts);
+
         bool ok = push_stack_frame(ctx);
         if (!ok)
         {
@@ -146,18 +154,31 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
         bool is_main = n->fdef.name.nts == strings_insert_nts("main").nts;
 
-        // function prologue
-        if (!is_main)
-        {
-            fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
-            fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
-        }
+        fprintf(ctx->out, "  subq    $32, %%rsp\n"); // move past "shadow stack" (calling convention on x64 windows)
+        // BUG BUG BUG HERE! If main ever 
+        //fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
+        //fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
 
-        // cdecl calling convention
-        for (uint32_t i = 0; i < n->fdef.params.size; ++i)
+
+        // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
+        // rcx, rdx, r8, r9, then spill into stack
+        uint32_t numArgs = n->fdef.params.size;
+        assert(numArgs >= 0 && numArgs <= 2);
+        if (numArgs == 1 || numArgs == 2)
         {
-            if (!push_var(ctx, n->fdef.params.nodes[i]->var.name, (i+2)*8)) // +1 because we are indexing from 0. +1 because the first location of rbp is storing the ret address??
+            uint64_t stack_offset = 8;
+            str var_name = n->fdef.params.nodes[0]->var.name;
+            if (!push_var(ctx, var_name, stack_offset))
                 return false;
+            fprintf(ctx->out, "  mov %%rcx, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, var_name.nts);
+        }
+        if (numArgs == 2)
+        {
+            uint64_t stack_offset = 16;
+            str var_name = n->fdef.params.nodes[1]->var.name;
+            if (!push_var(ctx, var_name, stack_offset))
+                return false;
+            fprintf(ctx->out, "  mov %%rdx, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, var_name.nts);
         }
 
         for(uint32_t i = 0; i < n->fdef.body.size; ++i)
@@ -174,6 +195,8 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             //  If a function other than main does not have a return statement than it is undefined behavior.
             //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
             fprintf(ctx->out, "  mov $0, %%rax\n");
+            fprintf(ctx->out, "  addq $32, %%rsp\n"); // replace shadow stack.
+            fprintf(ctx->out, "  ret\n");
         }
 
         ok = pop_stack_frame(ctx);
@@ -197,6 +220,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             return false;
 
         // function epilogue
+        fprintf(ctx->out, "  addq $32, %%rsp\n"); // replace shadow stack.
         fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
         fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
         fprintf(ctx->out, "  ret\n");
@@ -659,10 +683,9 @@ bool gen_asm(FILE* file, const AsmInput& input)
         ASTNode* n = input.root->program.nodes[i];
         if (n->type == AST_fdef)
         {
-            fprintf(ctx.out, "%s:\n", n->fdef.name.nts);
             if (n == main)
             {
-                fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
+                //fprintf(file, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
             }
             if (!gen_asm_node(&ctx, n))
                 return false;
