@@ -1,22 +1,18 @@
 #include "gen.h"
 #include "debug.h"
 
+static const bool GENERATE_DEBUG_BREAK_AT_START_OF_MAIN = false;
+
 struct loop_label
 {
     const char* end_label; // for break/return
     const char* update_label; // for continue/end of body
 };
 
-struct stack_var
-{
-    str name;
-    int64_t offset; // negative if local var, positive if function argument (i.e. cdecl convention)
-};
-
 struct stack_frame
 {
-    stack_var* vars; // TODO: Fix Memory Leak here.
-    int64_t num_vars;
+    ASTNodeArray vars;
+    int64_t frame_size_in_bytes;
 };
 
 struct gen_ctx
@@ -32,116 +28,220 @@ struct gen_ctx
     std::vector<loop_label> loop_labels;
 };
 
-bool push_stack_frame(gen_ctx* ctx)
+stack_frame* push_stack_frame(gen_ctx* ctx)
 {
     if (ctx->num_frames == 256)
     {
-        debug_break(); // error! out of memory!
-        return false;
+        debug_break();
+        return NULL;
     }
 
-    // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
-    // is super funky. there's a "shadow stack" we have to account for.
+    stack_frame* f = &ctx->stack_frames[ctx->num_frames++];
+    f->vars.nodes = NULL;
+    f->vars.size = 0;
+    f->frame_size_in_bytes = 0;
 
-    if (ctx->num_frames > 0)
-    {
-        fprintf(ctx->out, "  push %%rbp\n"); // save old value of EBP
-        fprintf(ctx->out, "  mov %%rsp, %%rbp\n"); // current top of stack is bottom of new stack frame
-    }
-    fprintf(ctx->out, "  subq $32, %%rsp # make room for \"shadow stack\" on windows\n");
-
-    ctx->stack_frames[ctx->num_frames].vars = NULL;
-    ctx->stack_frames[ctx->num_frames].num_vars = 0;
-    ++ctx->num_frames;
-    return true;
+    return f;
 }
 
-enum ePopType {
-    pop_func_def,
-    pop_ret,
-    pop_func_def_no_shadow,
+void push_vars_recursive(stack_frame* frame, ASTNode* n);
+void push_vars_recursive_ASTNodeArray(stack_frame* frame, const ASTNodeArray* na)
+{
+    for (uint32_t i = 0; i < na->size; ++i)
+    {
+        ASTNode* n = na->nodes[i];
+        push_vars_recursive(frame, n);
+    }
+}
+
+void push_vars_recursive(stack_frame* frame, ASTNode* n)
+{
+    if (n == NULL)
+        return;
+
+    if (n->type == AST_var && n->var.is_variable_declaration)
+    {
+        // NOTE: there's one other place we do this. See AST_binop below.
+        astn_push(&frame->vars, n);
+        frame->frame_size_in_bytes += 8; // TODO: calc size of type
+    }
+
+    switch (n->type)
+    {
+    case AST_program:
+        debug_break(); // we shouldn't hit this case, the initial caller should be a fdef
+        return;
+    case AST_blocklist:
+        push_vars_recursive_ASTNodeArray(frame, &n->blocklist);
+        return;
+    case AST_ret:
+        push_vars_recursive(frame, n->ret.expression);
+        return;
+    case AST_var:
+        push_vars_recursive(frame, n->var.assign_expression);
+        return;
+    case AST_num:
+        return;
+    case AST_fdecl:
+        debug_break(); // we shouldn't hit this case, the initial caller should be a fdef
+        return;
+    case AST_fdef:
+        debug_break(); // we shouldn't hit this case, the initial caller should be a fdef
+        return;
+    case AST_fcall:
+        push_vars_recursive_ASTNodeArray(frame, &n->fcall.args);
+        return;
+    case AST_if:
+        push_vars_recursive(frame, n->ifdef.condition);
+        push_vars_recursive(frame, n->ifdef.if_true);
+        push_vars_recursive(frame, n->ifdef.if_false);
+        return;
+    case AST_for:
+        push_vars_recursive(frame, n->forloop.init);
+        push_vars_recursive(frame, n->forloop.condition);
+        push_vars_recursive(frame, n->forloop.update);
+        push_vars_recursive(frame, n->forloop.body);
+        return;
+    case AST_while: // fall-through
+    case AST_dowhile:
+        push_vars_recursive(frame, n->whileloop.condition);
+        push_vars_recursive(frame, n->whileloop.body);
+        return;
+    case AST_binop: // BINOP REQUIRES A TEMPORARY LOCATION FOR STORAGE OF LEFT WHILE EVALUATING RIGHT. NOTE: We are doing this so we don't touch the stack. Previous binops would push/pop. Hopefully changing to a IR w/ infinite registers would simplify all this. 
+        astn_push(&frame->vars, n);
+        frame->frame_size_in_bytes += 8;
+        push_vars_recursive(frame, n->binop.left);
+        push_vars_recursive(frame, n->binop.right);
+        return;
+    case AST_unop:
+        push_vars_recursive(frame, n->unop.on);
+        return;
+    case AST_terop:
+        push_vars_recursive(frame, n->terop.condition);
+        push_vars_recursive(frame, n->terop.if_true);
+        push_vars_recursive(frame, n->terop.if_false);
+    case AST_break: // fall-through
+    case AST_continue: // fall-through
+    case AST_empty:
+        return;
+    };
+
+    debug_break(); // new AST type?
+}
+
+enum ePopType
+{
+    PT_gen_asm,
+    PT_gen_asm_and_free,
+    PT_no_asm_only_free,
 };
 
-bool pop_stack_frame(gen_ctx* ctx, ePopType pt)
+bool pop_scope(gen_ctx* ctx, stack_frame* sf, ePopType pt)
 {
     if (ctx->num_frames == 0)
     {
-        debug_break(); // error! too many pops!
+        debug_break();
         return false;
     }
 
-    if (pt != pop_func_def_no_shadow)
-        fprintf(ctx->out, "  addq $32, %%rsp # restore \"shadow stack\" for windows\n");
-
-    if (ctx->num_frames > 1)
+    if (!sf)
     {
-        fprintf(ctx->out, "  mov %%rbp, %%rsp\n"); // restore ESP; now it points to old EBP
-        fprintf(ctx->out, "  pop %%rbp\n"); // restore old EBP; now ESP is where it was before prologue
+        sf = &ctx->stack_frames[ctx->num_frames - 1];
     }
-
-    if (pt == pop_ret)
-        return true;
-
-    --ctx->num_frames;
-    return true;
-}
-
-bool push_local_var(gen_ctx* ctx, str name)
-{
-    if (ctx->num_frames == 0)
+    else if (sf != &ctx->stack_frames[ctx->num_frames - 1])
     {
-        debug_break(); // error! push a stack frame first!
+        debug_break();
         return false;
     }
 
-    stack_frame* frame = &ctx->stack_frames[ctx->num_frames - 1];
+    bool gen_asm = (pt == PT_gen_asm || pt == PT_gen_asm_and_free);
+    bool free_scope = (pt == PT_gen_asm_and_free || pt == PT_no_asm_only_free);
 
-    frame->vars = (stack_var*)realloc(frame->vars, size_t((frame->num_vars + 1) * sizeof(stack_var)));
-    frame->vars[frame->num_vars].name = name;
-    frame->vars[frame->num_vars].offset = (frame->num_vars + 1) * 8;
-    frame->vars[frame->num_vars].offset += 32; // +32 = shadow stack
-    frame->num_vars += 1;
-    return true;
-}
-
-bool push_var(gen_ctx* ctx, str name, int64_t offset)
-{
-    offset += 32;  // +32 = shadow stack
-
-    if (ctx->num_frames == 0)
+    if (gen_asm)
     {
-        debug_break(); // error! push a stack frame first!
-        return false;
+        if (sf->frame_size_in_bytes > 0)
+            fprintf(ctx->out, "  addq $%" PRIi64 ", %%rsp # pop function scope\n", sf->frame_size_in_bytes);
+        fprintf(ctx->out, "  ret\n");
     }
 
-    stack_frame* frame = &ctx->stack_frames[ctx->num_frames - 1];
-
-    frame->vars = (stack_var*)realloc(frame->vars, size_t((frame->num_vars + 1) * sizeof(stack_var)));
-    frame->vars[frame->num_vars].name = name;
-    frame->vars[frame->num_vars].offset = offset;
-    frame->num_vars += 1;
+    if (free_scope)
+    {
+        astn_free(&sf->vars);
+        --ctx->num_frames;
+    }
     return true;
 }
 
-int64_t get_stack_offset(gen_ctx* ctx, str s) // TODO??? : update this with what we know about function calling convention: https://en.wikipedia.org/wiki/X86_calling_conventions  namely that first four params passed into func are rcx, rdx, r8 and r9
+bool get_var_offset(gen_ctx* ctx, const ASTNode* n, int64_t* o_offset) // TODO??? : update this with what we know about function calling convention: https://en.wikipedia.org/wiki/X86_calling_conventions  namely that first four params passed into func are rcx, rdx, r8 and r9
 {
-    for (stack_frame* frame = ctx->stack_frames + ctx->num_frames;
-        frame >= ctx->stack_frames;
-        --frame)
+    stack_frame* frame = ctx->stack_frames + ctx->num_frames - 1;
+    for (uint32_t i = 0; i < frame->vars.size; ++i)
     {
-        for(stack_var* var = frame->vars + frame->num_vars;
-            var >= frame->vars;
-            --var)
+        if (frame->vars.nodes[i] == n)
         {
-            if (var->name.nts == s.nts)
-            {
-                return var->offset;
-            }
+            *o_offset = 32 + (8 * i);
+            return true;
         }
     }
 
     debug_break();
-    return 0;
+    return false;
+}
+
+bool copy_rax_to_var(gen_ctx* ctx, const ASTNode* n)
+{
+    assert(n->type == AST_var);
+    int64_t stack_offset;
+    bool ok = get_var_offset(ctx, n->var.var_decl, &stack_offset);
+    if (!ok)
+    {
+        debug_break();
+        return false;
+    }
+    fprintf(ctx->out, "  mov %%rax, %" PRIi64 "(%%rsp) # rax -> %s\n", stack_offset, n->var.name.nts);
+    return true;
+}
+
+bool copy_var_to_rax(gen_ctx* ctx, const ASTNode* n)
+{
+    assert(n->type == AST_var);
+    int64_t stack_offset;
+    bool ok = get_var_offset(ctx, n->var.var_decl, &stack_offset);
+    if (!ok)
+    {
+        debug_break();
+        return false;
+    }
+    fprintf(ctx->out, "  mov %" PRIi64 "(%%rsp), %%rax # rax <- %s\n", stack_offset, n->var.name.nts);
+    return true;
+}
+
+bool copy_rax_to_binop_temp(gen_ctx* ctx, const ASTNode* n)
+{
+    assert(n->type == AST_binop);
+    int64_t stack_offset;
+    bool ok = get_var_offset(ctx, n, &stack_offset);
+    if (!ok)
+    {
+        debug_break();
+        return false;
+    }
+    fprintf(ctx->out, "  mov %%rax, %" PRIi64 "(%%rsp) # rax -> binop temp\n", stack_offset);
+    return true;
+}
+
+bool copy_binop_temp_to_rcx(gen_ctx* ctx, const ASTNode* n)
+{
+    assert(n->type == AST_binop);
+    int64_t stack_offset;
+    bool ok = get_var_offset(ctx, n, &stack_offset);
+    if (!ok)
+    {
+        debug_break();
+        return false;
+    }
+    fprintf(ctx->out, "  mov %" PRIi64 "(%%rsp), %%rcx # rcx <- binop temp\n", stack_offset);
+    return true;
 }
 
 bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
@@ -155,17 +255,30 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
     {
         // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
         // rcx, rdx, r8, r9, then spill into stack
-        uint32_t numArgs = n->fcall.args.size;
-        assert(numArgs >= 0 && numArgs <= 2);
-        if (numArgs == 1 || numArgs == 2)
+        const uint32_t numArgs = n->fcall.args.size;
+        if (numArgs > 0)
         {
             if (!gen_asm_node(ctx, n->fcall.args.nodes[0])) return false;
             fprintf(ctx->out, "  mov %%rax, %%rcx\n");
         }
-        if (numArgs == 2)
+        if (numArgs > 1)
         {
             if (!gen_asm_node(ctx, n->fcall.args.nodes[1])) return false;
             fprintf(ctx->out, "  mov %%rax, %%rdx\n");
+        }
+        if (numArgs > 2)
+        {
+            if (!gen_asm_node(ctx, n->fcall.args.nodes[2])) return false;
+            fprintf(ctx->out, "  mov %%rax, %%r8\n");
+        }
+        if (numArgs > 3)
+        {
+            if (!gen_asm_node(ctx, n->fcall.args.nodes[3])) return false;
+            fprintf(ctx->out, "  mov %%rax, %%r9\n");
+        }
+        if (numArgs > 4)
+        {
+            debug_break(); // TODO: we only support 4 args at the moment. Would need to spill the rest into the stack and handle it...
         }
 
         fprintf(ctx->out, "  callq %s\n", n->fcall.name.nts);
@@ -174,75 +287,115 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
 
     if (n->type == AST_fdef)
     {
-        fprintf(ctx->out, "%s:\n", n->fdef.name.nts);
-
-        bool ok = push_stack_frame(ctx);
-        if (!ok)
-        {
-            debug_break();
-            return false;
-        }
-
         bool is_main = n->fdef.name.nts == strings_insert_nts("main").nts;
-        if (is_main)
+        stack_frame* func_sf = push_stack_frame(ctx);
+        push_vars_recursive_ASTNodeArray(func_sf, &n->fdef.params);
+        push_vars_recursive_ASTNodeArray(func_sf, &n->fdef.body);
+
+        // start of function stack frame
         {
-            fprintf(ctx->out, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
+            fprintf(ctx->out, "%s:\n", n->fdef.name.nts);
+            if (is_main && GENERATE_DEBUG_BREAK_AT_START_OF_MAIN)
+            {
+                fprintf(ctx->out, "  int $3\n"); // debug break, makes it easier to start step-by-step debugging with visual studio
+            }
+            func_sf->frame_size_in_bytes += 32; // because Windows https://en.wikipedia.org/wiki/X86_calling_conventions
+            fprintf(ctx->out, "  subq $%" PRIu64 ", %%rsp\n", func_sf->frame_size_in_bytes);
         }
 
+        // move all function params into the stack
+        //  - reason: simplicity. we won't have to worry about these values getting trounced if this function calls another function
         // calling convention for x86/x64 on windows: https://en.wikipedia.org/wiki/X86_calling_conventions
         // rcx, rdx, r8, r9, then spill into stack
-        uint32_t numArgs = n->fdef.params.size;
-        assert(numArgs >= 0 && numArgs <= 2);
-        if (numArgs == 1 || numArgs == 2)
         {
-            uint64_t stack_offset = 8;
-            str var_name = n->fdef.params.nodes[0]->var.name;
-            if (!push_var(ctx, var_name, stack_offset))
-                return false;
-            fprintf(ctx->out, "  mov %%rcx, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, var_name.nts);
-        }
-        if (numArgs == 2)
-        {
-            uint64_t stack_offset = 16;
-            str var_name = n->fdef.params.nodes[1]->var.name;
-            if (!push_var(ctx, var_name, stack_offset))
-                return false;
-            fprintf(ctx->out, "  mov %%rdx, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, var_name.nts);
+            const uint32_t numArgs = n->fdef.params.size;
+            if (numArgs > 0)
+            {
+                int64_t stack_offset;
+                ASTNode* var_node = n->fdef.params.nodes[0];
+                if (!get_var_offset(ctx, var_node, &stack_offset))
+                    return false;
+                fprintf(ctx->out, "  mov %%rcx, %" PRIu64 "(%%rsp) #write %s\n", stack_offset, var_node->var.name.nts);
+            }
+            if (numArgs > 1)
+            {
+                int64_t stack_offset;
+                ASTNode* var_node = n->fdef.params.nodes[1];
+                if (!get_var_offset(ctx, var_node, &stack_offset))
+                    return false;
+                fprintf(ctx->out, "  mov %%rdx, %" PRIu64 "(%%rsp) #write %s\n", stack_offset, var_node->var.name.nts);
+            }
+            if (numArgs > 2)
+            {
+                int64_t stack_offset;
+                ASTNode* var_node = n->fdef.params.nodes[2];
+                if (!get_var_offset(ctx, var_node, &stack_offset))
+                    return false;
+                fprintf(ctx->out, "  mov %%r8, %" PRIu64 "(%%rsp) #write %s\n", stack_offset, var_node->var.name.nts);
+            }
+            if (numArgs > 3)
+            {
+                int64_t stack_offset;
+                ASTNode* var_node = n->fdef.params.nodes[3];
+                if (!get_var_offset(ctx, var_node, &stack_offset))
+                    return false;
+                fprintf(ctx->out, "  mov %%r9, %" PRIu64 "(%%rsp) #write %s\n", stack_offset, var_node->var.name.nts);
+            }
+            if (numArgs > 4)
+            {
+                debug_break(); // TODO: this code only supports 4 params for calling functions. Need to update to "spill" into stack.
+            }
         }
 
+        // gen asm for body of function
         for(uint32_t i = 0; i < n->fdef.body.size; ++i)
         {
             if (!gen_asm_node(ctx, n->fdef.body.nodes[i]))
                 return false;
         }
-        
-        // Handle main() that does not have a return statement.
-        if (is_main)
+
+        // end of function stack frame
         {
-            if (n->fdef.body.size == 0 || n->fdef.body.nodes[n->fdef.body.size - 1]->type != AST_ret)
+            bool last_statement_is_return = false;
+            if (n->fdef.body.size > 0 && n->fdef.body.nodes[n->fdef.body.size - 1]->type == AST_ret)
+                last_statement_is_return = true;
+
+            if (last_statement_is_return)
             {
-                // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
-                //  If a function other than main does not have a return statement than it is undefined behavior.
-                //  Thus the assert. TODO: add error handling and let user know about undefined behavior.
-                fprintf(ctx->out, "  mov $0, %%rax\n");
-                ok = pop_stack_frame(ctx, pop_func_def);
-                assert(ok);
-                fprintf(ctx->out, "  ret\n");
+                bool ok = pop_scope(ctx, func_sf, PT_no_asm_only_free);
+                if (!ok)
+                {
+                    debug_break();
+                    return false;
+                }
+                func_sf = NULL;
             }
             else
             {
-                ok = pop_stack_frame(ctx, pop_func_def_no_shadow);
-                assert(ok);
+                // According to the C11 Standard, if main doesn't have a return statement than it should return 0.
+                //  Note: If this were not main than a missing return is UB (undefined behavior).
+                if (is_main)
+                {
+                    fprintf(ctx->out, "  mov $0, %%rax\n");
+                }
+                else
+                {
+                    // TODO: handle this case of UB (stage_9/valid/fib.c:fib does not have a return at end of function)
+                    fprintf(ctx->out, "  int $3 # should never hit this!\n");
+                    //debug_break();
+                    //return false; // This is a case of UB! Replace this with a proper error message instead of complete failure.
+                }
+
+                bool ok = pop_scope(ctx, func_sf, PT_gen_asm_and_free);
+                if (!ok)
+                {
+                    debug_break();
+                    return false;
+                }
+                func_sf = NULL;
             }
         }
-        else
-        {
-            ok = pop_stack_frame(ctx, pop_func_def);
-            assert(ok);
-        }
-
-        
-        return ok;
+        return true;
     }
 
     if (n->type == AST_blocklist)
@@ -252,6 +405,7 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
             if (!gen_asm_node(ctx, n->blocklist.nodes[i]))
                 return false;
         }
+
         return true;
     }
 
@@ -260,41 +414,21 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         if (n->ret.expression && !gen_asm_node(ctx, n->ret.expression))
             return false;
 
-        bool ok = pop_stack_frame(ctx, pop_ret);
-        assert(ok);
-        fprintf(ctx->out, "  ret\n");
-
-        return ok;
+        return pop_scope(ctx, NULL, PT_gen_asm);
     }
 
     if (n->type == AST_var)
     {
-        if (n->var.is_variable_declaration)
-        {
-            bool ok = push_local_var(ctx, n->var.name);
-            if (!ok)
-            {
-                debug_break();
-                return false;
-            }
-            fprintf(ctx->out, "  sub $8, %%rsp #make room for %s\n", n->var.name.nts);
-        }
-
         if (n->var.is_variable_assignment)
         {
             if (!gen_asm_node(ctx, n->var.assign_expression))
                 return false;
-            uint64_t stack_offset = get_stack_offset(ctx, n->var.name);
-            if (!stack_offset)
-                return false;
-            fprintf(ctx->out, "  mov %%rax, %" PRIu64 "(%%rbp) #write %s\n", stack_offset, n->var.name.nts);
-            return true;
+            return copy_rax_to_var(ctx, n);
         }
 
         if (n->var.is_variable_usage)
         {
-            fprintf(ctx->out, "  mov %" PRIu64 "(%%rbp), %%rax #read %s\n", get_stack_offset(ctx, n->var.name), n->var.name.nts);
-            return true;
+            return copy_var_to_rax(ctx, n);
         }
         
         // I guess it's just a decl this time...
@@ -525,33 +659,33 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case eToken::plus:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  add %%rcx, %%rax\n");
         } break;
         case eToken::dash:
         {
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  sub %%rcx, %%rax\n");
         } break;
         case eToken::star:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  imul %%rcx, %%rax\n");
         } break;
         case eToken::forward_slash: case eToken::mod:
         {
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  xor %%rdx, %%rdx\n"); //note dividend is combo of EDX:EAX. If we don't 0 out EDX we could get an integer overflow exception because RAX won't be big enough to store the result of the DIV
             fprintf(ctx->out, "  idiv %%rcx\n"); // quotient stored in rax, remainder in rdx
             if (n->binop.op == eToken::mod)
@@ -560,9 +694,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case '<':
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setl %%al\n");
@@ -570,9 +704,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case '>':
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setg %%al\n");
@@ -613,9 +747,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case eToken::logical_equal:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  sete %%al\n");
@@ -623,9 +757,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case eToken::logical_not_equal:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setne %%al\n");
@@ -633,9 +767,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case eToken::less_than_or_equal:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setle %%al\n");
@@ -643,9 +777,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
         case eToken::greater_than_or_equal:
         {
             gen_asm_node(ctx, n->binop.left);
-            fprintf(ctx->out, "  push %%rax\n");
+            copy_rax_to_binop_temp(ctx, n);
             gen_asm_node(ctx, n->binop.right);
-            fprintf(ctx->out, "  pop %%rcx\n");
+            copy_binop_temp_to_rcx(ctx, n);
             fprintf(ctx->out, "  cmp %%rax, %%rcx\n");
             fprintf(ctx->out, "  mov $0, %%rax\n");
             fprintf(ctx->out, "  setge %%al\n");
@@ -669,7 +803,7 @@ bool gen_asm(FILE* file, const AsmInput& input)
     ctx.label_index = 0;
     ctx.num_frames = 0;
 
-    /*
+    /* CLANG ASM of "int main(){return 2;}"
         .text
         .def     main;
         .scl    2;

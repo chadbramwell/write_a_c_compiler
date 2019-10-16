@@ -8,3 +8,4 @@ struct ASTNodeArray
 };
 
 void astn_push(ASTNodeArray* a, struct ASTNode* n);
+void astn_free(ASTNodeArray* a);

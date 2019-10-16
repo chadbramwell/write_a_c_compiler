@@ -59,6 +59,8 @@ struct ASTNode
             bool is_variable_usage;
             str name;
             ASTNode* assign_expression;
+            ASTNode* var_decl; // Which node the var was declared with. A var decl points to itself. Helpful info for gen phase.
+            const Token* debug_token;
         } var;
 
         struct {

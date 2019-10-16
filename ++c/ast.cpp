@@ -134,6 +134,13 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
         }
         astn_push(&func_params, decl);
 
+        // TODO SUPPORT MORE
+        if (func_params.size >= 4)
+        {
+            append_error(errors, tokens.next, "we only support 4 params when calling functions. TODO.");
+            return NULL;
+        }
+
         if (tokens.next == tokens.end)
         {
             append_error(errors, tokens.next, "out of tokens while parsing params");
@@ -260,6 +267,7 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
     {
         ASTNode n = {};
         n.type = AST_var;
+        n.var.var_decl = NULL;
         n.var.is_variable_declaration = true;
 
         ++tokens.next;
@@ -272,6 +280,7 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
             return NULL;
         }
 
+        n.var.debug_token = tokens.next;
         n.var.name = tokens.next->identifier;
         ++tokens.next;
 
@@ -532,7 +541,9 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
     {
         ASTNode n = {};
         n.type = AST_var;
+        n.var.var_decl = NULL;
         n.var.is_variable_assignment = true;
+        n.var.debug_token = tokens.next;
         n.var.name = tokens.next->identifier;
 
         tokens.next += 2; //skip id and assignment
@@ -1048,7 +1059,9 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
     {
         ASTNode n = {};
         n.type = AST_var;
+        n.var.var_decl = NULL;
         n.var.is_variable_usage = true;
+        n.var.debug_token = tokens.next;
         n.var.name = tokens.next->identifier;
         ++tokens.next;
 
@@ -1245,9 +1258,228 @@ ASTNode* parse_do_while_loop(TokenStream& io_tokens, std::vector<ASTError>& erro
     return new ASTNode(n);
 }
 
+struct fixup_context
+{
+    std::vector<ASTError>* errors;
+
+    ASTNodeArray var_decl_stack;
+};
+
+void fixup_var_references(fixup_context* ctx, ASTNode* n)
+{
+    if (!n) return;
+
+    // (1) touch every AST_var
+    // (2) if decl, set var_decl to self
+    // (3) if not decl, find decl it refers to
+    // all of this might be easier if every node had a parent node...
+    switch (n->type)
+    {
+    case AST_fdef: {
+        for (uint32_t i = 0; i < n->fdef.params.size; ++i)
+        {
+            fixup_var_references(ctx, n->fdef.params.nodes[i]);
+        }
+        for (uint32_t i = 0; i < n->fdef.body.size; ++i)
+        {
+            fixup_var_references(ctx, n->fdef.body.nodes[i]);
+        }
+    } return;
+
+    case AST_var: {
+        assert(n->var.var_decl == NULL); // should've been set to NULL when building AST. should only be touched once during iteration
+
+        if (n->var.assign_expression)
+            fixup_var_references(ctx, n->var.assign_expression);
+
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        if (n->var.is_variable_declaration)
+        {
+            astn_push(decls, n);
+            n->var.var_decl = n; // var_decl is self
+            return;
+        }
+        else
+        {
+            assert(decls->size > 0); // TODO: not sure if "decls->size - 1" properly upcasts to int64_t or if it will be MAX_uint32
+            for (int64_t i = decls->size - 1; i >= 0; --i)
+            {
+                ASTNode* test = decls->nodes[i];
+                assert(test->type == AST_var);
+                if (test->var.name.nts == n->var.name.nts)
+                {
+                    n->var.var_decl = test;
+                    return;
+                }
+            }
+        }
+
+        append_error(*ctx->errors, n->var.debug_token, "unable to find declaration for variable");
+    } return;
+
+    case AST_blocklist: {
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        uint32_t start_decls = decls->size; // save num decls before block
+        for (uint32_t i = 0; i < n->blocklist.size; ++i)
+        {
+            fixup_var_references(ctx, n->blocklist.nodes[i]);
+        }
+        decls->size = start_decls; // pop all decls (they are out of scope now)
+    } return;
+    case AST_ret: {
+        fixup_var_references(ctx, n->ret.expression);
+    } return;
+    
+    case AST_program: { debug_break(); }return;
+    case AST_num: {} return;
+    case AST_fdecl: {} return;
+    case AST_fcall: {
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        uint32_t start_decls = decls->size;
+        for (uint32_t i = 0; i < n->fcall.args.size; ++i)
+        {
+            fixup_var_references(ctx, n->fcall.args.nodes[i]);
+        }
+        assert(decls->size == start_decls);
+    } return;
+    case AST_if: {
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        uint32_t start_decls = decls->size;
+        fixup_var_references(ctx, n->ifdef.condition);
+        assert(decls->size == start_decls);
+        fixup_var_references(ctx, n->ifdef.if_true);
+        assert(decls->size == start_decls);
+        fixup_var_references(ctx, n->ifdef.if_false);
+        assert(decls->size == start_decls);
+    } return;
+    case AST_for: {
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        uint32_t start_decls = decls->size; // save num decls before block
+        fixup_var_references(ctx, n->forloop.init);
+        fixup_var_references(ctx, n->forloop.condition);
+        fixup_var_references(ctx, n->forloop.update);
+        fixup_var_references(ctx, n->forloop.body);
+        decls->size = start_decls; // pop all decls (they are out of scope now)
+    } return;
+    case AST_while: // fall-through
+    case AST_dowhile: {
+        ASTNodeArray* decls = &ctx->var_decl_stack;
+        uint32_t start_decls = decls->size; // save num decls before block
+        fixup_var_references(ctx, n->whileloop.condition);
+        fixup_var_references(ctx, n->whileloop.body);
+        decls->size = start_decls; // pop all decls (they are out of scope now)
+    } return;
+    case AST_unop: {
+        fixup_var_references(ctx, n->unop.on);
+    } return;
+    case AST_binop: {
+        fixup_var_references(ctx, n->binop.left);
+        fixup_var_references(ctx, n->binop.right);
+    } return;
+    case AST_terop: {
+        fixup_var_references(ctx, n->terop.condition);
+        fixup_var_references(ctx, n->terop.if_true);
+        fixup_var_references(ctx, n->terop.if_false);
+    } return;
+    case AST_break: {} return;
+    case AST_continue: {} return;
+    case AST_empty: {} return;
+    }
+
+    debug_break();
+}
+
+void debug_assert_vars_have_decls(ASTNode* n);
+void debug_assert_vars_have_decls_ASTNodeArray(ASTNodeArray* na)
+{
+    for (uint32_t i = 0; i < na->size; ++i)
+        debug_assert_vars_have_decls(na->nodes[i]);
+}
+
+void debug_assert_vars_have_decls(ASTNode* n)
+{
+    if (!n) return;
+
+    switch (n->type)
+    {
+    case AST_program: { debug_assert_vars_have_decls_ASTNodeArray(&n->program); } return;
+    case AST_blocklist: { debug_assert_vars_have_decls_ASTNodeArray(&n->blocklist); } return;
+    case AST_ret: { debug_assert_vars_have_decls(n->ret.expression); } return;
+    case AST_var: { 
+        assert(n->var.var_decl); 
+        debug_assert_vars_have_decls(n->var.assign_expression); 
+    } return;
+    case AST_num: {} return;
+    case AST_fdecl: {} return;
+    case AST_fdef: { 
+        debug_assert_vars_have_decls_ASTNodeArray(&n->fdef.params);
+        debug_assert_vars_have_decls_ASTNodeArray(&n->fdef.body);
+    } return;
+    case AST_fcall: { debug_assert_vars_have_decls_ASTNodeArray(&n->fcall.args); } return;
+    case AST_if: { 
+        debug_assert_vars_have_decls(n->ifdef.condition);
+        debug_assert_vars_have_decls(n->ifdef.if_true);
+        debug_assert_vars_have_decls(n->ifdef.if_false);
+    } return;
+    case AST_for: {
+        debug_assert_vars_have_decls(n->forloop.init);
+        debug_assert_vars_have_decls(n->forloop.condition);
+        debug_assert_vars_have_decls(n->forloop.update);
+        debug_assert_vars_have_decls(n->forloop.body);
+    } return;
+    case AST_while: // fall-through
+    case AST_dowhile: {
+        debug_assert_vars_have_decls(n->whileloop.condition);
+        debug_assert_vars_have_decls(n->whileloop.body);
+    } return;
+    case AST_unop: { debug_assert_vars_have_decls(n->unop.on); } return;
+    case AST_binop: {
+        debug_assert_vars_have_decls(n->binop.left);
+        debug_assert_vars_have_decls(n->binop.right);
+    } return;
+    case AST_terop: {
+        debug_assert_vars_have_decls(n->terop.condition);
+        debug_assert_vars_have_decls(n->terop.if_true);
+        debug_assert_vars_have_decls(n->terop.if_false);
+    } return;
+    case AST_break: {} return;
+    case AST_continue: {} return;
+    case AST_empty: {} return;
+    }
+
+    debug_break();
+}
+
 ASTNode* ast(TokenStream& io_tokens, std::vector<ASTError>& errors)
 {
-    return parse_program(io_tokens, errors);
+    ASTNode* root = parse_program(io_tokens, errors);
+    if (!root)
+        return NULL;
+    if (errors.size() > 0)
+        return NULL;
+
+    // fixup var references
+    {
+        assert(root->type == AST_program);
+
+        fixup_context ctx = {};
+        ctx.errors = &errors;
+        for (uint32_t i = 0; i < root->program.size; ++i)
+        {
+            ASTNode* n = root->program.nodes[i];
+            if (n->type == AST_fdef)
+            {
+                fixup_var_references(&ctx, n);
+            }
+        }
+
+        debug_assert_vars_have_decls(root);
+    }
+
+    if (errors.size() > 0)
+        return NULL;
+
+    return root;
 }
 
 void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)

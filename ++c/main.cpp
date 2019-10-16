@@ -145,6 +145,18 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
             printf("=== GEN ASSEMBLY ===\n");
             gen_asm(stdout, *asm_in);
             printf("\n");
+
+            fprintf(stdout, "Clang's ASM==[\n");
+
+            char temp_name[L_tmpnam];
+            tmpnam_s(temp_name);
+
+            char temp_cmd[256];
+            sprintf_s(temp_cmd, "clang -S %s -o%s", lexin.filename, temp_name);
+            assert(0 == system(temp_cmd));
+            LexInput temp2;
+            assert(read_file_into_lex_input(temp_name, &temp2));
+            fprintf(stdout, "%*s\n", int(temp2.length), temp2.stream);
         }
         printf("=== END DEBUG INFO ===\n");
     }
@@ -661,7 +673,11 @@ int main(int argc, char** argv)
             Test(TEST_LEX, &perf, "../stage_9/invalid/");
             Test(TEST_INTERP, &perf, "../stage_9/valid/");
             Test(TEST_GEN, &perf, "../stage_9/valid/");
-            if (test_single != 0) break;
+
+            Test(TEST_LEX, &perf, "../stage_9/");
+            Test(TEST_INTERP, &perf, "../stage_9/");
+            Test(TEST_GEN, &perf, "../stage_9/");
+            break;
         default:
             printf("Invalid Test #. Quitting.\n");
             debug_break();
@@ -878,10 +894,11 @@ int main(int argc, char** argv)
         int our_result = system(p.exe_path);
         if (our_result != ground_truth)
         {
+            dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, root, &asm_in);
             printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
             debug_break();
         }
-        else
+        else if(debug_print)
             printf("Return value of program: [%d]\n", our_result);
     }
     return clang_error;

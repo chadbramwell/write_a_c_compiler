@@ -8,6 +8,23 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
 
 Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint & asserts), *dir* (for getting file names in a directory), *strings* (for compact storage of identifiers and pointer-comparison instead of full string-comparison), *interp* (an interpreter for my AST, to be used in real-time)
 
+
+C support:
+* generates x64 asm
+* types: int (8 bytes)
+* supported unary op: -
+* supported binary op: +,-,/,*,%
+* supported terop: ?:
+* supported logical ops: <,>,<=,>=,||,&&,!=
+* if/else (body must be a single statement)
+* loops: for, while, do-while, break, continue, return
+* vars and scoping
+* functions (max 4 params)
+
+Milestones:
+* "Hello, World!" - using putchar(int)
+* recursive fibonacci - output is final return value of main
+
 **Never stop learning!** 
 
 -- Chad (@chad_bramwell)
@@ -18,6 +35,26 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * I liked these lines from [Stage 6](https://norasandler.com/2018/02/25/Write-a-Compiler-6.html):
   * "an expression has a value, but a statement doesn’t"
   * "a statement can contain other statements, but an expression can’t contain statements"
+
+## x64 Windows Cheat Sheet
+Because it's important for function calls and is important info when setting up local variables.
+And not explained in Nora Sandler's 'Write a Compiler' series.
+Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-calling-convention), [Register Volitility](https://docs.microsoft.com/en-us/cpp/build/x64-software-conventions?#register-usage)
+* Calling convention is NOT cdecl, even for standard library calls.
+* Calling convention is fastcall.
+* Integer arguments are passed through **rcx**, **rdx**, **r8**, **r9** (in that order)
+* If a funcation takes more than 4 arguments than it "spills" onto the stack.
+* "call" implicitly pushes return address onto the stack and then jumps
+* "ret" implicitly pops the return address off the stack and jumps to it. It's important that you've wiped out any allocations on the stack prior to "ret"
+* stack situations:
+  * start of main (no need to save rbp/rsp but do need to make room for 32 byte "shadow stack" on windows)
+  * end of main (remove "shadow stack" and all local vars)
+  * early return from main (same as above, perhaps jump to a cleanup section?)
+  * start of func (save rbp/rsp, 32 byte "shadow "stack")
+  * end of func (restore stack then restore rbp/rsp)
+  * return early from func (same as above, perhaps jump to a cleanup section?)
+
+
 
 ## Timeline 
 **Note: 'day' in descriptions below is more like a few hours of work**
@@ -75,6 +112,31 @@ Additional items written: *timer* (for perf timing), *debug* (for compile-time b
 * 9/19/2019 - STAGE 9 _INPROGRESS_
   * Lex of comma done but need to get params/args and such working in AST.
   * Took a tangent to rewrite my ASTNode data structure. Now it's a union of all my types and we no longer depend on std::vector.
+* 10/4/2019 - STAGE 9 _INPROGRESS_
+  * Boy oh boy has this stage been a PITA. Ways to improve it:
+    * Make a callout to Window's [calling convention](https://www.agner.org/optimize/calling_conventions.pdf) (hint: it's NOT cdecl)
+    * I ignored Stage7's statement about "Deallocating Variables" and honestly, it made no difference until this stage. It would've been nice to reiterate the importance of deallocating variables on STAGE 9 because it won't be properly tested until this stage.
+  * I'm probably at least 4 "days" into this... Spent most of time my having Clang generate assembly and comparing to what I've generated to try and understand where I've gone wrong.
+  * Building my test suite into my compiler and adding command-line options to quickly test a single file or a particular stage has been invaluable in saving time.
+  * It has been really useful to have Visual Studio debug my binaries (I drop "int 3" into the asm at the start of main so I can quickly debug it). I do dump all my asm and even clang's asm for comparison but it's a lot of text to absorb and parse, pulling it up in a debugger and stepping through values helps me track down my issue faster.
+  * Learnings: stage_9/valid/fib.c has UB (no return at end of func). That broke my compiler because I don't have a way currently to output warnings. Currently this behavior is allowed so if that case happens, it's going to be a hard time debugging it.
+  * My code was going crazy complicated trying to repair the stack in all the permutations of main/not-main/return-at-end/return-early. Now every function dumps a label at end for cleanup and all return does is jump to that label after putting its value into rax.
+  * Got a new problem. [Deallocating local variables](https://norasandler.com/2018/03/14/Write-a-Compiler-7.html#deallocating-variables)... ugh. Now I got to write a scoping mechanism for vars...
+  * I guess I have lots more reading to do. Windows calling conventions are nuts. https://www.gamasutra.com/view/news/178446/Indepth_Windows_x64_ABI_Stack_frames.php
+  * Perhaps the advice to to sub/add rsp for every local var is not the right approach for windows. The article above implies that rsp should only change with _alloca.
+  * What I don't know: When do I need to store rbp and push it? So far the simple programs I've come up with and thrown at clang don't do that at all.
+* 10/9/2019 - STAGE 9 _INPROGRESS_
+  * Yep. Still working on this. My last issue was because we set local vars as offsets from rbp but main has rbp set to 0 and accessing an offset from 0 is a violation. There's definately a gap in my knowledge here about why rbp is 0 on start and why Nora has suggested offsets from ebp. Maybe it's an x64 difference? From what I can tell, clang does everything as offsets from rsp... Looks like one fixed stack allocation for all necessary local variables at start of func and a single cleanup at end. I believe this includes space for all local variables as if every single local var was hoisted out of its scope to the function scope.
+  * I fixed the rbp issue by always copying rsp to rbp at the beginning of a function (including main)
+  * I have some new issue that I don't know the answer to yet. Looks like a stack overflow with fib.c
+* 10/15/2019 - **STAGE 9 TESTS PASS!**
+  * It's been a while. I'm on paternity leave and constantly exhausted. It's been really hard to find time and mental energy to work on this. But today I finally got in a few hours!
+  * Reworked a bunch of stuff. AST_var now has a pointer to the AST_var that declared the variable (or itself). This was helpful in the asm gen phase so I could lookup the stack offset of every *potential* variable used in a function. Stack preallocates all *potential* variables on the stack. Inspiration for this came from studying Clang's output.
+  * Added support for 4 param function calls. With x64 that means rcx, rdx, r8, r9. Supporting more than 4 requires "spilling into the stack" and I don't care to learn that and do it... yet.
+  * Nora Sandler's tutorial has been awesome and I plan on finishing up Stage 10. HOWEVER, I'm pretty frustrated at overly-simplistic usage of rax and push/pop. Today is the day that I've abandoned that approach to move towards what I saw from Clang's: ignore rbp, preallocate all stack-space needed at start of func, variables are offsets from rsp. Fallout from this was that my binary operations, which required push/pop, didn't work well with this approach since they modify rsp. So now every binary op allocates storage for a temporary on the stack. While this made writing the asm generation take longer, in the end it is producing less assembly. The primary driver for this approach was the frustration with seeing this overly-verbose assembly when trying to debug issues.
+  * I'm now wondering if this 3-step compiler where AST goes straight to ASM is the right approach. The frustration during ASM is having to manage the stack. I wonder if a better approach would be to write an IR that assumes infinite registers. My feeling is that it'd make passes (simplification/optimization) on the IR easier and that it'd make the ASM generation a lot more straight-forward.
+  * Maybe I got something wrong with all this ASM generation. I did choose to go for x64 calling convention and that's where all my above issues seem to stem from.
+  
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -122,6 +184,19 @@ Perf Results  [low,    high,   avg   ]
   run_exe:    [46.75ms, 66.98ms, 52.80ms]
   grnd_truth: [180.34ms, 770.66ms, 202.42ms]
   interp:     [0.00ms, 0.10ms, 0.01ms]
+```
+with STAGE 9 functions! (10/15/2019). There's a noticeable climb in ast. This is probably due to the extra pass I added to ast to link all variables back to their declarations:
+```
+Tests took 61768.23ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.07ms, 0.50ms, 0.12ms]
+  lex:        [0.00ms, 0.11ms, 0.01ms]
+  ast:        [0.01ms, 0.38ms, 0.02ms]
+  gen_asm:    [0.03ms, 0.25ms, 0.08ms]
+  gen_exe:    [112.36ms, 148.25ms, 120.56ms]
+  run_exe:    [44.03ms, 60.20ms, 49.32ms]
+  grnd_truth: [177.34ms, 255.13ms, 190.90ms]
+  interp:     [0.00ms, 0.53ms, 0.01ms]
 ```
 
 ## TODO (other than Stages)
@@ -182,10 +257,16 @@ Perf Results  [low,    high,   avg   ]
 * Focusing on a minimal program "int main(){return 2;}" is fantastic!
 * Let the user know upfront that the way to test is to echo the return code of the program, not to look for a stdout print.
 * Tutorial should also include binary generation. Skip the assembler entirely! Not sure the level of complexity there but an executable is just a file format that the OS knows to load into executable memory. It's just data.
+* Update Tutorial to be a 4 stage process: Lex -> AST -> IR -> asm/binary/os-specific/arch-specific.
+* IR would have "infinite" registers. In theory, this would make it easier to generate efficient binary even without optimizing IR. (I've been frustrated with the overly verbose output from Nora's eax usage for all operations and the extraneous push/pop for binary operations. I hope there's a good reason for it but at the moment the output asm is very verbose and difficult to debug/compare with clang). Also with an "infinite" set of registers, I presume it'd be easier for function calls and such where rcx, rdx, r8, and r9 are used first before spilling onto stack.
+* IR would need some sort of "return" register.
+* With IR, it'd also be easier to do an important step for x64 generation on windows: make room on the stack for everything a function needs up front.
+* Note that Clang doesn't use rbp (from the small # of asm files I've inspected) instead it does offsets from rsp.
 
 ## Open questions I have:
 * I'm confident I can make the lexer work without memory allocations - use stack memory, do chunk-based iteration, strings are look-ups into source, all the same as my json parser. Caveat: Minimum required stack memory will be set to max allowable identifier size and I don't know if C places a limit on that. So here's my question, can the same be done for parsing and assembly generation? Could I pipeline the whole process without requiring memory allocation? Probably not, but it's a fun question to think about.
 * Lexer could produce an identifier "int" or a token defining the keyword "int." It doesn't know which is which from context. C declares "int" is a reserved keyword. I don't see why this *MUST* but the case yet. I suspect it's not and it gets thrown onto the heap of "well we made specific decisions to make it easier for a compiler writer"
+* Could we skip the AST entirely? Certainly there's [examples](https://archive.org/details/dr_dobbs_journal_vol_05_201803/page/n193) of generating assembly while parsing C directly. Is the AST really an important transformation stage? Perhaps going straight to IR and validating that would be better?
 
 ## See below for the original README.md which is a fork of https://github.com/nlsandler/write_a_c_compiler
 
