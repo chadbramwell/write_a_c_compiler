@@ -7,3 +7,5 @@ x64
 *.obj
 *.timer.log
 *.exe
+*.ilk
+*.pdb

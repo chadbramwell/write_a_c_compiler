@@ -235,24 +235,6 @@ bool pop_func_frame(interp_context* ctx, int64_t count)
     return true;
 }
 
-bool read_func_var(interp_context* ctx, int64_t stack_offset, int64_t* value)
-{
-    if (ctx->stack_top - stack_offset < 0)
-    {
-        debug_break();
-        return false; // stack vars don't exist
-    }
-
-    if (ctx->stack[ctx->stack_top - stack_offset].id != NULL)
-    {
-        debug_break();
-        return false; // stack vars have id set to NULL (see push_func_var)
-    }
-
-    *value = ctx->stack[ctx->stack_top - stack_offset].value;
-    return true;
-}
-
 bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 {
     assert(root);

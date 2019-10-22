@@ -136,6 +136,10 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * Nora Sandler's tutorial has been awesome and I plan on finishing up Stage 10. HOWEVER, I'm pretty frustrated at overly-simplistic usage of rax and push/pop. Today is the day that I've abandoned that approach to move towards what I saw from Clang's: ignore rbp, preallocate all stack-space needed at start of func, variables are offsets from rsp. Fallout from this was that my binary operations, which required push/pop, didn't work well with this approach since they modify rsp. So now every binary op allocates storage for a temporary on the stack. While this made writing the asm generation take longer, in the end it is producing less assembly. The primary driver for this approach was the frustration with seeing this overly-verbose assembly when trying to debug issues.
   * I'm now wondering if this 3-step compiler where AST goes straight to ASM is the right approach. The frustration during ASM is having to manage the stack. I wonder if a better approach would be to write an IR that assumes infinite registers. My feeling is that it'd make passes (simplification/optimization) on the IR easier and that it'd make the ASM generation a lot more straight-forward.
   * Maybe I got something wrong with all this ASM generation. I did choose to go for x64 calling convention and that's where all my above issues seem to stem from.
+* 10/22/2019 - **STAGE 10 TESTS PASS!**
+  * That means we support global variables. And all stages complete that have been written by Nora Sandler. (mixed emotions here)
+  * Took me a day.
+  * Re-wrote how all variables are generated. They now generate a string as offset from rsp (ex: 32(%rsp)) or as an offset from rip for global vars (ex: my_global(%rip)).
   
 
 ## Performance Status
@@ -198,6 +202,32 @@ Perf Results  [low,    high,   avg   ]
   grnd_truth: [177.34ms, 255.13ms, 190.90ms]
   interp:     [0.00ms, 0.53ms, 0.01ms]
 ```
+STAGE 10 complete! (10/22/2019) hooo boy that spike up in gen_asm. I'm guessing it's because I now calloc gen_ctx (with the shift to all static arrays, it was too big to keep on the stack).
+```
+Tests took 68609.15ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.08ms, 0.99ms, 0.14ms]
+  lex:        [0.00ms, 0.06ms, 0.01ms]
+  ast:        [0.01ms, 0.27ms, 0.02ms]
+  gen_asm:    [1.09ms, 1.75ms, 1.26ms]
+  gen_exe:    [114.47ms, 148.93ms, 124.48ms]
+  run_exe:    [47.65ms, 59.73ms, 51.09ms]
+  grnd_truth: [183.37ms, 712.46ms, 199.28ms]
+  interp:     [0.00ms, 12.77ms, 0.14ms]
+```
+STAGE 10 optimization (put everything in gen_ctx back on the stack). Much better. :)
+```
+Tests took 68710.57ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.08ms, 0.45ms, 0.13ms]
+  lex:        [0.00ms, 0.07ms, 0.01ms]
+  ast:        [0.01ms, 0.35ms, 0.02ms]
+  gen_asm:    [0.03ms, 0.39ms, 0.07ms]
+  gen_exe:    [111.01ms, 157.71ms, 125.12ms]
+  run_exe:    [45.72ms, 60.20ms, 50.85ms]
+  grnd_truth: [182.53ms, 787.49ms, 200.46ms]
+  interp:     [0.00ms, 8.36ms, 0.08ms]
+```
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)
@@ -207,6 +237,7 @@ Perf Results  [low,    high,   avg   ]
 * Paged Allocator for ASTNodes.
 * Try new simplify rule: Variable elimination (ex: "int main(){int a = 2;return a;}" should become "int main(){return 2;}"
 * Add warning for uninitialized variable
+* Cleanup strings table when running multiple tests. (it never frees and probably has some impact on perf results)
 * Add equivalent warnings to what Clang produces:
 ```
 ../stage_4/valid/and_true.c:2:14: warning: use of logical '&&' with constant operand [-Wconstant-logical-operand]

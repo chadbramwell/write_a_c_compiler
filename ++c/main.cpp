@@ -707,9 +707,9 @@ int main(int argc, char** argv)
         
     }
 
-    bool debug_print = false;
-    bool debug_print_to_disk = false;
-    bool debug_print_timers = false;
+    bool verbose_print = false;
+    bool verbose_print_to_disk = false;
+    bool verbose_print_timers = false;
 
     Timer main_timer;
     main_timer.start();
@@ -729,12 +729,12 @@ int main(int argc, char** argv)
                 argv[2][1] == 'v' &&
                 argv[2][2] == 0)
             {
-                debug_print = true;
-                debug_print_timers = true;
+                verbose_print = true;
+                verbose_print_timers = true;
             }
         }
 
-        if (debug_print)
+        if (verbose_print)
         {
             fprintf(stdout, "===RAW FILE [%s]===\n", lex_in.filename);
             fwrite(lex_in.stream, 1, (size_t)lex_in.length, stdout);
@@ -767,14 +767,14 @@ int main(int argc, char** argv)
         debug_break();
         return 1;
     }
-    else if (debug_print)
+    else if (verbose_print)
     {
         fprintf(stdout, "==lex success!==[");
         dump_lex(stdout, lex_out);
         fprintf(stdout, "]\n");
 
         FILE* file;
-        if (debug_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
+        if (verbose_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
         {
             dump_lex(file, lex_out);
             fclose(file);
@@ -795,14 +795,14 @@ int main(int argc, char** argv)
         debug_break();
         return 1;
     }
-    else if (debug_print)
+    else if (verbose_print)
     {
         fprintf(stdout, "==ast success!==[\n");
         dump_ast(stdout, *root, 0);
         fprintf(stdout, "\n]\n");
 
         FILE* file;
-        if (debug_print_to_disk && 0 == fopen_s(&file, p.ast_path, "wb"))
+        if (verbose_print_to_disk && 0 == fopen_s(&file, p.ast_path, "wb"))
         {
             dump_ast(file, *root, 0);
             fclose(file);
@@ -837,7 +837,7 @@ int main(int argc, char** argv)
         debug_break();
         return 1;
     }
-    else if (debug_print)
+    else if (verbose_print)
     {
         fprintf(stdout, "==gen_asm success!==[\n");
         gen_asm(stdout, asm_in);
@@ -869,19 +869,19 @@ int main(int argc, char** argv)
     int clang_error = 0;
     {
         char clang_buffer[1024];
-        sprintf_s(clang_buffer, "clang %s -o%s", p.asm_path, p.exe_path);
+        sprintf_s(clang_buffer, "clang -g %s -o%s", p.asm_path, p.exe_path);
         //printf("FILENAME:[%s]\n", clang_buffer);
         clang_timer.start();
         clang_error = system(clang_buffer);
         clang_timer.end();
-        if (debug_print)
+        if (verbose_print)
             fprintf(stdout, "Clang Compliation Result: %d\n", clang_error);
-        if(debug_print_timers)
+        if(verbose_print_timers)
             fprintf(stdout, "Clang Took %.2fms\n", clang_timer.milliseconds());
     }
 
     main_timer.end();
-    if(debug_print_timers) fprintf(stdout, "Total Time: %.2fms\n", main_timer.milliseconds());
+    if(verbose_print_timers) fprintf(stdout, "Total Time: %.2fms\n", main_timer.milliseconds());
 
     fprintf(timer_log, "[%s] total time: %.2fms of which a system call to clang took %.2fms\n",
         p.original,
@@ -896,11 +896,11 @@ int main(int argc, char** argv)
         int our_result = system(p.exe_path);
         if (our_result != ground_truth)
         {
-            dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, root, &asm_in);
+            if(!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, root, &asm_in);
             printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
             debug_break();
         }
-        else if(debug_print)
+        else if(verbose_print)
             printf("Return value of program: [%d]\n", our_result);
     }
     return clang_error;
