@@ -12,6 +12,13 @@ struct stack_var
     int64_t value;
 };
 
+struct global_var
+{
+    const char* id; // same assumption ast stack_var here. See NOTE above.
+    bool defined; // global vars may be forward-declared any number of times but they can only be defined once
+    int64_t value;
+};
+
 struct interp_context
 {
     stack_var stack[256]; // uses sentinal values for stack frames
@@ -23,6 +30,8 @@ struct interp_context
     bool continue_triggered;
 
     ASTNodeArray global_funcs;
+    global_var global_vars[256];
+    int64_t num_global_vars;
 };
 
 bool push_frame(interp_context* ctx)
@@ -52,12 +61,67 @@ bool pop_frame(interp_context* ctx)
     return true;
 }
 
+void declare_global_var(interp_context* ctx, const char* id)
+{
+    // find it first, if already declared than ignore
+    for (int64_t i = 0; i < ctx->num_global_vars; ++i)
+    {
+        if (ctx->global_vars[i].id == id)
+        {
+            return;
+        }
+    }
+
+    // need room
+    if (ctx->num_global_vars >= 256)
+    {
+        debug_break();
+        return;
+    }
+
+    global_var* v = &ctx->global_vars[ctx->num_global_vars++];
+    v->id = id;
+    v->defined = false;
+    v->value = 0; // global vars default to zero even if they are never defined
+}
+
+void define_global_var(interp_context* ctx, const char* id, int64_t value)
+{
+    // try to find it, if it exists ensure this is the first time we are defining it
+    for (int64_t i = 0; i < ctx->num_global_vars; ++i)
+    {
+        global_var* v = &ctx->global_vars[i];
+        if (v->id != id) continue;
+        if (v->defined)
+        {
+            debug_break();
+            return;
+        }
+
+        v->defined = true;
+        v->value = value;
+        return;
+    }
+
+    // first time for var, make sure we have room
+    if (ctx->num_global_vars >= 256)
+    {
+        debug_break();
+        return;
+    }
+
+    global_var* v = &ctx->global_vars[ctx->num_global_vars++];
+    v->id = id;
+    v->defined = true;
+    v->value = value;
+}
+
 bool push_var(interp_context* ctx, const char* id)
 {
     if (ctx->stack_top >= 256)
     {
         debug_break();
-        return NULL; // no room
+        return false; // no room
     }
 
     // ensure valid frame as been pushed
@@ -81,6 +145,7 @@ bool push_var(interp_context* ctx, const char* id)
 
 bool read_var(interp_context* ctx, const char* id, int64_t* out_var)
 {
+    // try reading from stack first
     for(stack_var* iter = ctx->stack + ctx->stack_top - 1;
         iter >= ctx->stack;
         --iter)
@@ -91,12 +156,25 @@ bool read_var(interp_context* ctx, const char* id, int64_t* out_var)
             return true;
         }
     }
+
+    // not found on stack so check global vars (no need to iterate backwards here, globals can't shadow themselves)
+    for (int64_t i = 0; i < ctx->num_global_vars; ++i)
+    {
+        global_var* v = &ctx->global_vars[i];
+        if (v->id == id)
+        {
+            *out_var = v->value;
+            return true;
+        }
+    }
+
     debug_break();
     return false;
 }
 
 bool write_var(interp_context* ctx, const char* id, int64_t value)
 {
+    // try writing stack first
     for (stack_var* iter = ctx->stack + ctx->stack_top - 1;
         iter >= ctx->stack;
         --iter)
@@ -107,6 +185,18 @@ bool write_var(interp_context* ctx, const char* id, int64_t value)
             return true;
         }
     }
+
+    // not found on stack so check global vars (no need to iterate backwards here, globals can't shadow themselves)
+    for (int64_t i = 0; i < ctx->num_global_vars; ++i)
+    {
+        global_var* v = &ctx->global_vars[i];
+        if (v->id == id)
+        {
+            v->value = value;
+            return true;
+        }
+    }
+
     debug_break();
     return false;
 }
@@ -469,6 +559,10 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
                 if(n->fdef.name.nts == strMain.nts)
                     main = n;
             }
+            else if (n->type == AST_var)
+            {
+
+            }
         }
 
         if (!main) RETURN_INTERP_FAILURE;
@@ -538,5 +632,52 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
 bool interp_return_value(ASTNode* root, int64_t* out_result)
 {
     interp_context ctx = {};
-    return interp(root, &ctx, out_result);
+
+    if (root->type != AST_program)
+    {
+        debug_break();
+        return false;
+    }
+
+    // initialize globals and find main
+    str strMain = strings_insert_nts("main");
+    ASTNode* main = NULL;
+    for (uint32_t i = 0; i < root->program.size; ++i)
+    {
+        ASTNode* n = root->program.nodes[i];
+        if (n->type == AST_fdef)
+        {
+            astn_push(&ctx.global_funcs, n);
+            if (n->fdef.name.nts == strMain.nts)
+                main = n;
+        }
+        else if (n->type == AST_var)
+        {
+            if (n->var.assign_expression)
+            {
+                int64_t v;
+                bool ok = interp(n->var.assign_expression, NULL, &v);
+                if (!ok)
+                {
+                    debug_break();
+                    return false;
+                }
+
+                define_global_var(&ctx, n->var.name.nts, v);
+            }
+            else
+            {
+                declare_global_var(&ctx, n->var.name.nts);
+            }
+        }
+    }
+
+    if (!main) RETURN_INTERP_FAILURE;
+    if (!interp(main, &ctx, out_result)) RETURN_INTERP_FAILURE;
+
+    // special case in standard. if main does not have a return, than it should return 0
+    if (!ctx.return_triggered)
+        *out_result = 0;
+
+    return true;
 }

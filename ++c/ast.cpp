@@ -120,6 +120,8 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
         return NULL;
 
     // (
+    if (tokens.next->type != eToken::open_parens)
+        return NULL;
     if (!expect_and_advance(tokens, eToken::open_parens, errors)) return NULL;
 
     // params
@@ -1301,8 +1303,7 @@ void fixup_var_references(fixup_context* ctx, ASTNode* n)
         }
         else
         {
-            assert(decls->size > 0); // TODO: not sure if "decls->size - 1" properly upcasts to int64_t or if it will be MAX_uint32
-            for (int64_t i = decls->size - 1; i >= 0; --i)
+            for (int64_t i = int64_t(decls->size) - 1; i >= 0; --i)
             {
                 ASTNode* test = decls->nodes[i];
                 assert(test->type == AST_var);
@@ -1467,7 +1468,7 @@ ASTNode* ast(TokenStream& io_tokens, std::vector<ASTError>& errors)
         for (uint32_t i = 0; i < root->program.size; ++i)
         {
             ASTNode* n = root->program.nodes[i];
-            if (n->type == AST_fdef)
+            //if (n->type == AST_fdef)
             {
                 fixup_var_references(&ctx, n);
             }
