@@ -51,36 +51,58 @@ Token* push_id(LexOutput* out, const char* start, const char* end)
     return token;
 }
 
-void try_resolve_keyword(Token* io_token)
+static str kStrVoid;
+static str kStrInt;
+static str kStrReturn;
+static str kStrIf;
+static str kStrElse;
+static str kStrFor;
+static str kStrWhile;
+static str kStrDo;
+static str kStrBreak;
+static str kStrContinue;
+
+void init_str_keywords()
+{
+    if (kStrVoid.nts)
+        return; // Assume all other strings are also initilized
+
+    kStrVoid = strings_insert_nts("void");
+    kStrInt = strings_insert_nts("int");
+    kStrReturn = strings_insert_nts("return");
+    kStrIf = strings_insert_nts("if");
+    kStrElse = strings_insert_nts("else");
+    kStrFor = strings_insert_nts("for");
+    kStrWhile = strings_insert_nts("while");
+    kStrDo = strings_insert_nts("do");
+    kStrBreak = strings_insert_nts("break");
+    kStrContinue = strings_insert_nts("continue");
+}
+
+eToken try_resolve_keyword(str identifier)
 {
     // cool warning from MSVC from previous code:
     // for "io_token->type == eToken::keyword_int;" when I intended an assignment
     // 1>c:\users\chad\desktop\practice\write_a_c_compiler\++c\lex.cpp(58): warning C4553: '==': result of expression not used; did you intend '='?
 
-    if (io_token->identifier.nts == strings_insert_nts("void").nts)
-        io_token->type = eToken::keyword_void;
-    else if (io_token->identifier.nts == strings_insert_nts("int").nts)
-        io_token->type = eToken::keyword_int;
-    else if (io_token->identifier.nts == strings_insert_nts("return").nts)
-        io_token->type = eToken::keyword_return;
-    else if (io_token->identifier.nts == strings_insert_nts("if").nts)
-        io_token->type = eToken::keyword_if;
-    else if (io_token->identifier.nts == strings_insert_nts("else").nts)
-        io_token->type = eToken::keyword_else;
-    else if (io_token->identifier.nts == strings_insert_nts("for").nts)
-        io_token->type = eToken::keyword_for;
-    else if (io_token->identifier.nts == strings_insert_nts("while").nts)
-        io_token->type = eToken::keyword_while;
-    else if (io_token->identifier.nts == strings_insert_nts("do").nts)
-        io_token->type = eToken::keyword_do;
-    else if (io_token->identifier.nts == strings_insert_nts("break").nts)
-        io_token->type = eToken::keyword_break;
-    else if (io_token->identifier.nts == strings_insert_nts("continue").nts)
-        io_token->type = eToken::keyword_continue;
+    if (identifier.nts == kStrVoid.nts) return eToken::keyword_void;
+    else if (identifier.nts == kStrInt.nts) return eToken::keyword_int;
+    else if (identifier.nts == kStrReturn.nts) return eToken::keyword_return;
+    else if (identifier.nts == kStrIf.nts) return eToken::keyword_if;
+    else if (identifier.nts == kStrElse.nts) return eToken::keyword_else;
+    else if (identifier.nts == kStrFor.nts) return eToken::keyword_for;
+    else if (identifier.nts == kStrWhile.nts) return eToken::keyword_while;
+    else if (identifier.nts == kStrDo.nts) return eToken::keyword_do;
+    else if (identifier.nts == kStrBreak.nts) return eToken::keyword_break;
+    else if (identifier.nts == kStrContinue.nts) return eToken::keyword_continue;
+
+    return eToken::identifier;
 }
 
 bool lex(const LexInput& input, LexOutput& output)
 {
+    init_str_keywords();
+
     // store length of output buffer and wipe it's length for return value
     // code below will write to and increment end_output
     const char* stream = input.stream;
@@ -249,7 +271,7 @@ bool lex(const LexInput& input, LexOutput& output)
             Token* token = push_id(&output, stream, token_end);
             stream = token_end;
 
-            try_resolve_keyword(token);
+            token->type = try_resolve_keyword(token->identifier);
             continue;
         }
 

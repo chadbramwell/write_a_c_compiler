@@ -3,12 +3,12 @@
 #include "memory.h"
 #include <cinttypes>
 
-char g_nts_strings[1024];
-char* g_nts_strings_end = g_nts_strings;
-char* g_nts_strings_cap = g_nts_strings + sizeof(g_nts_strings);
-str g_table[32];
-str* g_table_end = g_table;
-str* g_table_cap = g_table + sizeof(g_table);
+static char g_nts_strings[1024];
+static char* g_nts_strings_end = g_nts_strings;
+static char* g_nts_strings_cap = g_nts_strings + 1024;
+static str g_table[64];
+static str* g_table_end = g_table;
+static str* g_table_cap = g_table + 64;
 
 str strings_insert(const char* start, const char* end)
 {
