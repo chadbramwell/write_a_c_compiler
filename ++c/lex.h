@@ -39,6 +39,7 @@ enum eToken : uint8_t
     less_than_or_equal,     // <=
     greater_than_or_equal,  // >=
 
+    keyword_void,
     keyword_int,
     keyword_return,
     keyword_if,

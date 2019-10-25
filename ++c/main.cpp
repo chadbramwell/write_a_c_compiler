@@ -679,6 +679,11 @@ int main(int argc, char** argv)
             Test(TEST_LEX, &perf, "../stage_10/invalid/");
             Test(TEST_INTERP, &perf, "../stage_10/valid/");
             Test(TEST_GEN, &perf, "../stage_10/valid/");
+            if (test_single != 0) break; // quit if 0 or fall-through if not
+        case 11:
+            Test(TEST_LEX, &perf, "../stage_10+/");
+            Test(TEST_INTERP, &perf, "../stage_10+/");
+            Test(TEST_GEN, &perf, "../stage_10+/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");

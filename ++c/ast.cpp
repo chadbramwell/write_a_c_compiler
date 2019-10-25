@@ -106,8 +106,13 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     str func_name;
     ASTNodeArray func_params = {};
 
-    // int
-    if (!expect_and_advance(tokens, eToken::keyword_int, errors)) return NULL;
+    // int or void
+    if (tokens.next->type != eToken::keyword_int && tokens.next->type != eToken::keyword_void)
+    {
+        append_error(errors, tokens.next, "expected int or void at start of function");
+        return NULL;
+    }
+    ++tokens.next;
     if (tokens.next == tokens.end)
         return NULL;
 
@@ -1818,24 +1823,21 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
         // line_num & line_start
         uint64_t line_num = 0;
         const char* line_start = file_start;
-        const char* line_end = file_end;
         while (line_start < error_location)
         {
             ++line_num;
-            const char* new_line_start = line_start;
-            while (new_line_start < file_end && *new_line_start != '\n')
-                ++new_line_start;
-            if (new_line_start < file_end) // we must be at '\n', skip it
-                ++new_line_start;
-            if (new_line_start < error_location)
-            {
-                line_start = new_line_start;
-                continue;
-            }
-
-            line_end = new_line_start - 2;
-            break;
+            const char* line_iter = line_start;
+            while (line_iter < file_end && *line_iter != '\n')
+                ++line_iter;
+            if (line_iter >= error_location)
+                break;
+            line_start = line_iter + 1; // +1 to skip '\n'
         }
+
+        // line_end
+        const char* line_end = line_start;
+        while (line_end < file_end && *line_end != '\n')
+            ++line_end;
 
         uint64_t char_num = uint64_t(error_location - line_start);
 
@@ -1879,4 +1881,5 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
         fputc('\n', file);
     }
     fprintf(file, "======END AST ERRORS\n");
+    debug_break();
 }
