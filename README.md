@@ -140,7 +140,8 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * That means we support global variables. And all stages complete that have been written by Nora Sandler. (mixed emotions here)
   * Took me a day.
   * Re-wrote how all variables are generated. They now generate a string as offset from rsp (ex: 32(%rsp)) or as an offset from rip for global vars (ex: my_global(%rip)).
-  
+* 10/25/2019 - **STAGE 10+ START** Going it on my own from here. First step is return value of void for functions.
+ * 
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -227,6 +228,19 @@ Perf Results  [low,    high,   avg   ]
   run_exe:    [45.72ms, 60.20ms, 50.85ms]
   grnd_truth: [182.53ms, 787.49ms, 200.46ms]
   interp:     [0.00ms, 8.36ms, 0.08ms]
+```
+STAGE 10+ refactors. Lex is probably high because I don't preallocate keywords for strings test, I'll try that next. I'm surprised ast went down. asm change has got to be noise.
+```
+Tests took 70748.13ms
+Perf Results  [low,    high,   avg   ]
+  read_file:  [0.08ms, 1.80ms, 0.16ms]
+  lex:        [0.00ms, 0.22ms, 0.02ms]
+  ast:        [0.01ms, 0.18ms, 0.02ms]
+  gen_asm:    [0.03ms, 0.34ms, 0.07ms]
+  gen_exe:    [117.62ms, 175.77ms, 128.77ms]
+  run_exe:    [48.46ms, 67.46ms, 53.77ms]
+  grnd_truth: [187.70ms, 407.30ms, 205.75ms]
+  interp:     [0.00ms, 9.13ms, 0.10ms]
 ```
 
 ## TODO (other than Stages)

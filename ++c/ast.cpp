@@ -36,30 +36,46 @@
 //    - This makes it easier to move the instruction pointer during debugging and it should allow for simpler function call structure
 // GENERAL RULE FOR FUNCTIONS BELOW: assume there's at least one item in the token stream
 
-ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_function_call(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_block_item(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_conditional_exp(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_logical_or_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors);
-ASTNode* parse_do_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors);
 
-bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, std::vector<ASTError>& errors);
-void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason);
+struct TokenStream
+{
+    const Token* next;
+    const Token* end;
+};
 
-ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors)
+struct ast_context
+{
+    ASTError* errors;
+    uint32_t num_errors;
+
+    //ASTNode* in_func; // used to verify return value of funcs
+    ASTNodeArray var_decl_stack; // fixup references
+};
+
+ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_block_item(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_declaration(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_conditional_exp(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_logical_or_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_logical_and_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_equality_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_relational_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_additive_expression(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_term(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_factor(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_for_loop(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_while_loop(TokenStream& io_tokens, ast_context* ctx);
+ASTNode* parse_do_while_loop(TokenStream& io_tokens, ast_context* ctx);
+
+bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, ast_context* ctx);
+void append_error(ast_context* ctx, const Token* token, const char* reason);
+
+ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx)
 {
     // <program> ::= { <function> | <declaration> }
     if (io_tokens.next == io_tokens.end)
@@ -74,12 +90,12 @@ ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
     while (tokens.next != tokens.end)
     {
-        if (ASTNode* f = parse_function(tokens, errors))
+        if (ASTNode* f = parse_function(tokens, ctx))
         {
             astn_push(&n.program, f);
             continue;
         }
-        if (ASTNode* d = parse_declaration_with_semicolon(tokens, errors))
+        if (ASTNode* d = parse_declaration_with_semicolon(tokens, ctx))
         {
             astn_push(&n.program, d);
             continue;
@@ -97,7 +113,7 @@ ASTNode* parse_program(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return NULL;
 }
 
-ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
 {
     // <function> :: = "int" <id> "("["int" <id> { "," "int" <id> }] ")" ("{" { <block - item> } "}" | ";")
     assert(io_tokens.next != io_tokens.end);
@@ -109,7 +125,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     // int or void
     if (tokens.next->type != eToken::keyword_int && tokens.next->type != eToken::keyword_void)
     {
-        append_error(errors, tokens.next, "expected int or void at start of function");
+        append_error(ctx, tokens.next, "expected int or void at start of function");
         return NULL;
     }
     ++tokens.next;
@@ -127,12 +143,12 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     // (
     if (tokens.next->type != eToken::open_parens)
         return NULL;
-    if (!expect_and_advance(tokens, eToken::open_parens, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::open_parens, ctx)) return NULL;
 
     // params
     while (tokens.next != tokens.end)
     {
-        ASTNode* decl = parse_declaration(tokens, errors);
+        ASTNode* decl = parse_declaration(tokens, ctx);
         if (!decl) break;
         if (decl->type != AST_var)
         {
@@ -144,13 +160,13 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
         // TODO SUPPORT MORE
         if (func_params.size >= 4)
         {
-            append_error(errors, tokens.next, "we only support 4 params when calling functions. TODO.");
+            append_error(ctx, tokens.next, "we only support 4 params when calling functions. TODO.");
             return NULL;
         }
 
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "out of tokens while parsing params");
+            append_error(ctx, tokens.next, "out of tokens while parsing params");
             return NULL;
         }
 
@@ -159,7 +175,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
 
     // )
-    if (!expect_and_advance(tokens, eToken::closed_parens, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::closed_parens, ctx)) return NULL;
 
     // either end with ; or we get a func body
     if (tokens.next == tokens.end)
@@ -177,16 +193,16 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
 
     // func body! {
-    if (!expect_and_advance(tokens, eToken::open_curly, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::open_curly, ctx)) return NULL;
 
     // body
     ASTNodeArray func_body = {};
     while (tokens.next != tokens.end)
     {
-        ASTNode* bi = parse_block_item(tokens, errors);
+        ASTNode* bi = parse_block_item(tokens, ctx);
         if (!bi)
         {
-            if (errors.size() > 0)
+            if (ctx->num_errors > 0)
                 return NULL;
             break;
         }
@@ -195,7 +211,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
 
     // }
-    if (!expect_and_advance(tokens, eToken::closed_curly, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::closed_curly, ctx)) return NULL;
 
     io_tokens = tokens;
     ASTNode* n = new ASTNode;
@@ -206,7 +222,7 @@ ASTNode* parse_function(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return n;
 }
 
-ASTNode* parse_function_call(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx)
 {
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
@@ -226,7 +242,7 @@ ASTNode* parse_function_call(TokenStream& io_tokens, std::vector<ASTError>& erro
 
     while (tokens.next != tokens.end)
     {
-        ASTNode* arg = parse_expression(tokens, errors);
+        ASTNode* arg = parse_expression(tokens, ctx);
         if (!arg) break;
         astn_push(&n.fcall.args, arg);
 
@@ -235,26 +251,26 @@ ASTNode* parse_function_call(TokenStream& io_tokens, std::vector<ASTError>& erro
             ++tokens.next;
     }
 
-    if (!expect_and_advance(tokens, eToken::closed_parens, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::closed_parens, ctx)) return NULL;
 
     io_tokens = tokens;
     return new ASTNode(n);
 }
 
-ASTNode* parse_block_item(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_block_item(TokenStream& io_tokens, ast_context* ctx)
 {
     // <block-item> ::= <statement> | <declaration>
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* n = parse_statement(tokens, errors);
+    ASTNode* n = parse_statement(tokens, ctx);
     if (n)
     {
         io_tokens = tokens;
         return n;
     }
 
-    n = parse_declaration_with_semicolon(tokens, errors);
+    n = parse_declaration_with_semicolon(tokens, ctx);
     if (n)
     {
         io_tokens = tokens;
@@ -264,7 +280,7 @@ ASTNode* parse_block_item(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return NULL;
 }
 
-ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_declaration(TokenStream& io_tokens, ast_context* ctx)
 {
     // <declaration> ::= "int" <id> [ = <exp> ]
     assert(io_tokens.next != io_tokens.end);
@@ -283,7 +299,7 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
 
         if (tokens.next->type != eToken::identifier)
         {
-            append_error(errors, tokens.next, "expected identifier after variable type");
+            append_error(ctx, tokens.next, "expected identifier after variable type");
             return NULL;
         }
 
@@ -299,10 +315,10 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
             n.var.is_variable_assignment = true;
             ++tokens.next;
 
-            n.var.assign_expression = parse_expression(tokens, errors);
+            n.var.assign_expression = parse_expression(tokens, ctx);
             if (!n.var.assign_expression)
             {
-                append_error(errors, tokens.next, "expected expression after =");
+                append_error(ctx, tokens.next, "expected expression after =");
                 return NULL;
             }
         }
@@ -314,21 +330,21 @@ ASTNode* parse_declaration(TokenStream& io_tokens, std::vector<ASTError>& errors
     return NULL;
 }
 
-ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, ast_context* ctx)
 {
     // <declaration_with_semicolon> ::= <declaration> ";"
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* decl = parse_declaration(tokens, errors);
+    ASTNode* decl = parse_declaration(tokens, ctx);
     if (!decl) return NULL;
-    if (!expect_and_advance(tokens, eToken::semicolon, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::semicolon, ctx)) return NULL;
 
     io_tokens = tokens;
     return decl;
 }
 
-ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx)
 {
     // <statement> ::= "return" <exp> ";"
     //               | <exp> ";"
@@ -354,14 +370,14 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
         if (tokens.next == tokens.end)
             return NULL;
 
-        n.ret.expression = parse_expression(tokens, errors);
+        n.ret.expression = parse_expression(tokens, ctx);
         if (!n.ret.expression)
         {
-            append_error(errors, tokens.next, "expected expression after return");
+            append_error(ctx, tokens.next, "expected expression after return");
             return NULL;
         }
 
-        if (!expect_and_advance(tokens, eToken::semicolon, errors)) return NULL;
+        if (!expect_and_advance(tokens, eToken::semicolon, ctx)) return NULL;
 
         io_tokens = tokens;
         return new ASTNode(n);
@@ -369,7 +385,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
     // expression
     {
-        ASTNode* expr = parse_expression(tokens, errors);
+        ASTNode* expr = parse_expression(tokens, ctx);
         if (expr && tokens.next->type == eToken::semicolon)
         {
             ++tokens.next;
@@ -388,24 +404,24 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
         ++tokens.next;
 
         // (
-        if (!expect_and_advance(tokens, eToken::open_parens, errors)) return NULL;
+        if (!expect_and_advance(tokens, eToken::open_parens, ctx)) return NULL;
         if (tokens.next == tokens.end) return NULL;
 
-        n.ifdef.condition = parse_expression(tokens, errors);
+        n.ifdef.condition = parse_expression(tokens, ctx);
         if (!n.ifdef.condition)
         {
-            append_error(errors, tokens.next, "expected expression ater if");
+            append_error(ctx, tokens.next, "expected expression ater if");
             return NULL;
         }
 
         // )
-        if (!expect_and_advance(tokens, eToken::closed_parens, errors)) return NULL;
+        if (!expect_and_advance(tokens, eToken::closed_parens, ctx)) return NULL;
         if (tokens.next == tokens.end) return NULL;
 
-        n.ifdef.if_true = parse_statement(tokens, errors);
+        n.ifdef.if_true = parse_statement(tokens, ctx);
         if (!n.ifdef.if_true)
         {
-            append_error(errors, tokens.next, "expected statement after if");
+            append_error(ctx, tokens.next, "expected statement after if");
             return NULL;
         }
 
@@ -414,10 +430,10 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
             ++tokens.next;
             if (tokens.next == tokens.end) return NULL;
 
-            n.ifdef.if_false = parse_statement(tokens, errors);
+            n.ifdef.if_false = parse_statement(tokens, ctx);
             if (!n.ifdef.if_false)
             {
-                append_error(errors, tokens.next, "expected statement after else");
+                append_error(ctx, tokens.next, "expected statement after else");
                 return NULL;
             }
         }
@@ -435,17 +451,17 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
         while (tokens.next != tokens.end)
         {
-            ASTNode* bi = parse_block_item(tokens, errors);
+            ASTNode* bi = parse_block_item(tokens, ctx);
             if (!bi)
             {
-                if (errors.size() != 0)
+                if (ctx->num_errors != 0)
                     return NULL;
                 break;
             }
             astn_push(&n.blocklist, bi);
         }
 
-        if (!expect_and_advance(tokens, eToken::closed_curly, errors))
+        if (!expect_and_advance(tokens, eToken::closed_curly, ctx))
             return NULL;
 
         io_tokens = tokens;
@@ -455,7 +471,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
     // for
     if (tokens.next->type == eToken::keyword_for)
     {
-        ASTNode* n = parse_for_loop(tokens, errors);
+        ASTNode* n = parse_for_loop(tokens, ctx);
         if (!n)
             return NULL;
         io_tokens = tokens;
@@ -465,7 +481,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
     // while
     if (tokens.next->type == eToken::keyword_while)
     {
-        ASTNode* n = parse_while_loop(tokens, errors);
+        ASTNode* n = parse_while_loop(tokens, ctx);
         if (!n)
             return NULL;
         io_tokens = tokens;
@@ -475,7 +491,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
     // do-while
     if (tokens.next->type == eToken::keyword_do)
     {
-        ASTNode* n = parse_do_while_loop(tokens, errors);
+        ASTNode* n = parse_do_while_loop(tokens, ctx);
         if (!n)
             return NULL;
         io_tokens = tokens;
@@ -493,7 +509,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
             return NULL;
         if (tokens.next->type != eToken::semicolon)
         {
-            append_error(errors, tokens.next, "expected ; after break/continue");
+            append_error(ctx, tokens.next, "expected ; after break/continue");
             return NULL;
         }
 
@@ -513,7 +529,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
             return NULL;
         if (tokens.next->type != eToken::semicolon)
         {
-            append_error(errors, tokens.next, "expected ; after break/continue");
+            append_error(ctx, tokens.next, "expected ; after break/continue");
             return NULL;
         }
 
@@ -536,7 +552,7 @@ ASTNode* parse_statement(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return NULL;
 }
 
-ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <exp> ::= <id> "=" <exp> | <conditional-exp>
     assert(io_tokens.next != io_tokens.end);
@@ -555,10 +571,10 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
 
         tokens.next += 2; //skip id and assignment
 
-        n.var.assign_expression = parse_expression(tokens, errors);
+        n.var.assign_expression = parse_expression(tokens, ctx);
         if (!n.var.assign_expression)
         {
-            append_error(errors, tokens.next, "expected expression after =");
+            append_error(ctx, tokens.next, "expected expression after =");
             return NULL;
         }
 
@@ -566,7 +582,7 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
         return new ASTNode(n);
     }
 
-    ASTNode* n = parse_conditional_exp(tokens, errors);
+    ASTNode* n = parse_conditional_exp(tokens, ctx);
     if (n)
     {
         io_tokens = tokens;
@@ -576,13 +592,13 @@ ASTNode* parse_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return NULL;
 }
 
-ASTNode* parse_conditional_exp(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_conditional_exp(TokenStream& io_tokens, ast_context* ctx)
 {
     // <conditional-exp> ::= <logical-or-exp> [ "?" <exp> ":" <conditional-exp> ]
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* expr = parse_logical_or_expression(tokens, errors);
+    ASTNode* expr = parse_logical_or_expression(tokens, ctx);
     if (!expr)
         return NULL;
 
@@ -599,21 +615,21 @@ ASTNode* parse_conditional_exp(TokenStream& io_tokens, std::vector<ASTError>& er
     n.type = AST_terop;
     n.terop.condition = expr;
 
-    if (!expect_and_advance(tokens, eToken::question_mark, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::question_mark, ctx)) return NULL;
 
-    n.terop.if_true = parse_expression(tokens, errors);
+    n.terop.if_true = parse_expression(tokens, ctx);
     if (!n.terop.if_true)
     {
-        append_error(errors, tokens.next, "expected expression after ?");
+        append_error(ctx, tokens.next, "expected expression after ?");
         return NULL;
     }
 
-    if (!expect_and_advance(tokens, eToken::colon, errors)) return NULL;
+    if (!expect_and_advance(tokens, eToken::colon, ctx)) return NULL;
 
-    n.terop.if_false = parse_conditional_exp(tokens, errors);
+    n.terop.if_false = parse_conditional_exp(tokens, ctx);
     if (!n.terop.if_false)
     {
-        append_error(errors, tokens.next, "expected conditional expression after :");
+        append_error(ctx, tokens.next, "expected conditional expression after :");
         return NULL;
     }
 
@@ -621,13 +637,13 @@ ASTNode* parse_conditional_exp(TokenStream& io_tokens, std::vector<ASTError>& er
     return new ASTNode(n);
 }
 
-ASTNode* parse_logical_or_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_logical_or_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <logical-or-exp> ::= <logical-and-exp> { "||" <logical-and-exp> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_logical_and_expression(tokens, errors);
+    ASTNode* left_node = parse_logical_and_expression(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -647,14 +663,14 @@ ASTNode* parse_logical_or_expression(TokenStream& io_tokens, std::vector<ASTErro
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected term after || but no more tokens");
+            append_error(ctx, tokens.next, "expected term after || but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_logical_and_expression(tokens, errors);
+        ASTNode* right_node = parse_logical_and_expression(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected term after ||");
+            append_error(ctx, tokens.next, "expected term after ||");
             return NULL;
         }
 
@@ -676,13 +692,13 @@ ASTNode* parse_logical_or_expression(TokenStream& io_tokens, std::vector<ASTErro
     return new ASTNode(op);
 }
 
-ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_logical_and_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <logical-and-exp> ::= <equality-exp> { "&&" <equality-exp> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_equality_expression(tokens, errors);
+    ASTNode* left_node = parse_equality_expression(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -702,14 +718,14 @@ ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTErr
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected additive expression after && but no more tokens");
+            append_error(ctx, tokens.next, "expected additive expression after && but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_equality_expression(tokens, errors);
+        ASTNode* right_node = parse_equality_expression(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected additive expression after &&");
+            append_error(ctx, tokens.next, "expected additive expression after &&");
             return NULL;
         }
 
@@ -730,13 +746,13 @@ ASTNode* parse_logical_and_expression(TokenStream& io_tokens, std::vector<ASTErr
     return new ASTNode(op);
 }
 
-ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_equality_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <equality-exp> ::= <relational-exp> { ("!=" | "==") <relational-exp> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_relational_expression(tokens, errors);
+    ASTNode* left_node = parse_relational_expression(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -757,14 +773,14 @@ ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected additive expression after != or == but no more tokens");
+            append_error(ctx, tokens.next, "expected additive expression after != or == but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_relational_expression(tokens, errors);
+        ASTNode* right_node = parse_relational_expression(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected additive expression after != or ==");
+            append_error(ctx, tokens.next, "expected additive expression after != or ==");
             return NULL;
         }
 
@@ -788,13 +804,13 @@ ASTNode* parse_equality_expression(TokenStream& io_tokens, std::vector<ASTError>
     return new ASTNode(op);
 }
 
-ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_relational_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <relational-exp> ::= <additive-exp> { ("<" | ">" | "<=" | ">=") <additive-exp> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_additive_expression(tokens, errors);
+    ASTNode* left_node = parse_additive_expression(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -817,14 +833,14 @@ ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTErro
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected additive expression after <, >, <=, or >= but no more tokens");
+            append_error(ctx, tokens.next, "expected additive expression after <, >, <=, or >= but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_additive_expression(tokens, errors);
+        ASTNode* right_node = parse_additive_expression(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected additive expression after <, >, <=, or >=");
+            append_error(ctx, tokens.next, "expected additive expression after <, >, <=, or >=");
             return NULL;
         }
 
@@ -850,13 +866,13 @@ ASTNode* parse_relational_expression(TokenStream& io_tokens, std::vector<ASTErro
     return new ASTNode(op);
 }
 
-ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_additive_expression(TokenStream& io_tokens, ast_context* ctx)
 {
     // <additive-exp> ::= <term> { ("+" | "-") <term> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_term(tokens, errors);
+    ASTNode* left_node = parse_term(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -877,14 +893,14 @@ ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected term after + or - but no more tokens");
+            append_error(ctx, tokens.next, "expected term after + or - but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_term(tokens, errors);
+        ASTNode* right_node = parse_term(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected term after + or -");
+            append_error(ctx, tokens.next, "expected term after + or -");
             return NULL;
         }
 
@@ -906,13 +922,13 @@ ASTNode* parse_additive_expression(TokenStream& io_tokens, std::vector<ASTError>
     return new ASTNode(op);
 }
 
-ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_term(TokenStream& io_tokens, ast_context* ctx)
 {
     // <term> :: = <factor> { ("*" | "/" | "%") <factor> }
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* left_node = parse_factor(tokens, errors);
+    ASTNode* left_node = parse_factor(tokens, ctx);
     if (!left_node)
         return NULL;
 
@@ -934,14 +950,14 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
         ++tokens.next;
         if (tokens.next == tokens.end)
         {
-            append_error(errors, tokens.next, "expected factor after *, /, or % but no more tokens");
+            append_error(ctx, tokens.next, "expected factor after *, /, or % but no more tokens");
             return NULL;
         }
 
-        ASTNode* right_node = parse_factor(tokens, errors);
+        ASTNode* right_node = parse_factor(tokens, ctx);
         if (!right_node)
         {
-            append_error(errors, tokens.next, "expected factor after *, /, or %");
+            append_error(ctx, tokens.next, "expected factor after *, /, or %");
             return NULL;
         }
 
@@ -964,13 +980,13 @@ ASTNode* parse_term(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return new ASTNode(op);
 }
 
-ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_factor(TokenStream& io_tokens, ast_context* ctx)
 {
     // <factor> ::= <function-call> | "(" <exp> ")" | <unary_op> <factor> | <int> | <id>
     assert(io_tokens.next != io_tokens.end);
     TokenStream tokens = io_tokens;
 
-    ASTNode* f = parse_function_call(tokens, errors);
+    ASTNode* f = parse_function_call(tokens, ctx);
     if (f)
     {
         io_tokens = tokens;
@@ -984,16 +1000,16 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
         if (tokens.next == tokens.end)
             return NULL;
 
-        ASTNode* expression = parse_expression(tokens, errors);
+        ASTNode* expression = parse_expression(tokens, ctx);
         if (!expression)
         {
-            append_error(errors, tokens.next, "expected expression after (");
+            append_error(ctx, tokens.next, "expected expression after (");
             return NULL;
         }
 
         if (tokens.next->type != eToken::closed_parens)
         {
-            append_error(errors, tokens.next, "expected ) after expression");
+            append_error(ctx, tokens.next, "expected ) after expression");
             return NULL;
         }
 
@@ -1017,10 +1033,10 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
         if (tokens.next == tokens.end)
             return NULL;
 
-        ASTNode* factor = parse_factor(tokens, errors);
+        ASTNode* factor = parse_factor(tokens, ctx);
         if (!factor)
         {
-            append_error(errors, tokens.next, "expected factor after unary operator");
+            append_error(ctx, tokens.next, "expected factor after unary operator");
             return NULL;
         }
         n.unop.on = factor;
@@ -1079,7 +1095,7 @@ ASTNode* parse_factor(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return NULL;
 }
 
-ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_for_loop(TokenStream& io_tokens, ast_context* ctx)
 {
     assert(io_tokens.next != io_tokens.end);
     if (io_tokens.next + 6 >= io_tokens.end) // 5 = "for(;;);" (min required tokens for for loop)
@@ -1096,7 +1112,7 @@ ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     ASTNode n = {};
     n.type = AST_for;
 
-    if (!expect_and_advance(tokens, eToken::open_parens, errors))
+    if (!expect_and_advance(tokens, eToken::open_parens, ctx))
         return NULL;
 
     // parse init
@@ -1107,17 +1123,17 @@ ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
     else
     {
-        n.forloop.init = parse_declaration_with_semicolon(tokens, errors);
+        n.forloop.init = parse_declaration_with_semicolon(tokens, ctx);
         if (!n.forloop.init)
         {
-            n.forloop.init = parse_expression(tokens, errors);
+            n.forloop.init = parse_expression(tokens, ctx);
             if (!n.forloop.init)
             {
-                append_error(errors, tokens.next, "failed parsing init section of for loop");
+                append_error(ctx, tokens.next, "failed parsing init section of for loop");
                 return NULL;
             }
 
-            if (!expect_and_advance(tokens, eToken::semicolon, errors))
+            if (!expect_and_advance(tokens, eToken::semicolon, ctx))
                 return NULL;
         }
         assert(n.forloop.init);
@@ -1131,14 +1147,14 @@ ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
     else
     {
-        n.forloop.condition = parse_expression(tokens, errors);
+        n.forloop.condition = parse_expression(tokens, ctx);
         if (!n.forloop.condition)
         {
-            append_error(errors, tokens.next, "failed parsing condition section of for loop");
+            append_error(ctx, tokens.next, "failed parsing condition section of for loop");
             return NULL;
         }
 
-        if (!expect_and_advance(tokens, eToken::semicolon, errors))
+        if (!expect_and_advance(tokens, eToken::semicolon, ctx))
             return NULL;
 
         assert(n.forloop.condition);
@@ -1152,32 +1168,32 @@ ASTNode* parse_for_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     }
     else
     {
-        n.forloop.update = parse_expression(tokens, errors);
+        n.forloop.update = parse_expression(tokens, ctx);
         if (!n.forloop.update)
         {
-            append_error(errors, tokens.next, "failed parsing update section of for loop");
+            append_error(ctx, tokens.next, "failed parsing update section of for loop");
             return NULL;
         }
 
-        if (!expect_and_advance(tokens, eToken::closed_parens, errors))
+        if (!expect_and_advance(tokens, eToken::closed_parens, ctx))
             return NULL;
 
         assert(n.forloop.update);
     }
 
     // for loop body
-    n.forloop.body = parse_statement(tokens, errors);
+    n.forloop.body = parse_statement(tokens, ctx);
     if (n.forloop.body)
     {
         io_tokens = tokens;
         return new ASTNode(n);
     }
 
-    append_error(errors, tokens.next, "expected loop body after for loop");
+    append_error(ctx, tokens.next, "expected loop body after for loop");
     return NULL;
 }
 
-ASTNode* parse_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_while_loop(TokenStream& io_tokens, ast_context* ctx)
 {
     assert(io_tokens.next != io_tokens.end);
     if (io_tokens.next + 4 >= io_tokens.end) //X = while(...);
@@ -1194,23 +1210,23 @@ ASTNode* parse_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     ASTNode n = {};
     n.type = AST_while;
 
-    if (!expect_and_advance(tokens, eToken::open_parens, errors))
+    if (!expect_and_advance(tokens, eToken::open_parens, ctx))
         return NULL;
 
-    n.whileloop.condition = parse_expression(tokens, errors);
+    n.whileloop.condition = parse_expression(tokens, ctx);
     if(!n.whileloop.condition)
     {
-        append_error(errors, tokens.next, "expected conditional expression inside while()");
+        append_error(ctx, tokens.next, "expected conditional expression inside while()");
         return NULL;
     }
 
-    if (!expect_and_advance(tokens, eToken::closed_parens, errors))
+    if (!expect_and_advance(tokens, eToken::closed_parens, ctx))
         return NULL;
 
-    n.whileloop.body = parse_statement(tokens, errors);
+    n.whileloop.body = parse_statement(tokens, ctx);
     if(!n.whileloop.body)
     {
-        append_error(errors, tokens.next, "expected body after while(...)");
+        append_error(ctx, tokens.next, "expected body after while(...)");
         return NULL;
     }
 
@@ -1218,7 +1234,7 @@ ASTNode* parse_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
     return new ASTNode(n);
 }
 
-ASTNode* parse_do_while_loop(TokenStream& io_tokens, std::vector<ASTError>& errors)
+ASTNode* parse_do_while_loop(TokenStream& io_tokens, ast_context* ctx)
 {
     assert(io_tokens.next != io_tokens.end);
     if (io_tokens.next + 7 >= io_tokens.end) //X = do{...}while(...);
@@ -1235,44 +1251,37 @@ ASTNode* parse_do_while_loop(TokenStream& io_tokens, std::vector<ASTError>& erro
     ASTNode n = {};
     n.type = AST_dowhile;
 
-    n.whileloop.body = parse_statement(tokens, errors);
+    n.whileloop.body = parse_statement(tokens, ctx);
     if(!n.whileloop.body)
     {
-        append_error(errors, tokens.next, "expected loop body after do");
+        append_error(ctx, tokens.next, "expected loop body after do");
         return NULL;
     }
 
-    if (!expect_and_advance(tokens, eToken::keyword_while, errors))
+    if (!expect_and_advance(tokens, eToken::keyword_while, ctx))
         return NULL;
 
-    if (!expect_and_advance(tokens, eToken::open_parens, errors))
+    if (!expect_and_advance(tokens, eToken::open_parens, ctx))
         return NULL;
 
-    n.whileloop.condition = parse_expression(tokens, errors);
+    n.whileloop.condition = parse_expression(tokens, ctx);
     if(!n.whileloop.condition)
     {
-        append_error(errors, tokens.next, "expected condition inside while()");
+        append_error(ctx, tokens.next, "expected condition inside while()");
         return NULL;
     }
 
-    if (!expect_and_advance(tokens, eToken::closed_parens, errors))
+    if (!expect_and_advance(tokens, eToken::closed_parens, ctx))
         return NULL;
 
-    if (!expect_and_advance(tokens, eToken::semicolon, errors))
+    if (!expect_and_advance(tokens, eToken::semicolon, ctx))
         return NULL;
 
     io_tokens = tokens;
     return new ASTNode(n);
 }
 
-struct fixup_context
-{
-    std::vector<ASTError>* errors;
-
-    ASTNodeArray var_decl_stack;
-};
-
-void fixup_var_references(fixup_context* ctx, ASTNode* n)
+void fixup_var_references(ast_context* ctx, ASTNode* n)
 {
     if (!n) return;
 
@@ -1320,7 +1329,7 @@ void fixup_var_references(fixup_context* ctx, ASTNode* n)
             }
         }
 
-        append_error(*ctx->errors, n->var.debug_token, "unable to find declaration for variable");
+        append_error(ctx, n->var.debug_token, "unable to find declaration for variable");
     } return;
 
     case AST_blocklist: {
@@ -1456,46 +1465,16 @@ void debug_assert_vars_have_decls(ASTNode* n)
     debug_break();
 }
 
-ASTNode* ast(TokenStream& io_tokens, std::vector<ASTError>& errors)
+void dump_ast(FILE* file, const ASTNode* root, int spaces_indent)
 {
-    ASTNode* root = parse_program(io_tokens, errors);
-    if (!root)
-        return NULL;
-    if (errors.size() > 0)
-        return NULL;
+    const ASTNode& self = *root; // TODO: replace this with pointer so we can fully transition to C from C++
 
-    // fixup var references
-    {
-        assert(root->type == AST_program);
-
-        fixup_context ctx = {};
-        ctx.errors = &errors;
-        for (uint32_t i = 0; i < root->program.size; ++i)
-        {
-            ASTNode* n = root->program.nodes[i];
-            //if (n->type == AST_fdef)
-            {
-                fixup_var_references(&ctx, n);
-            }
-        }
-
-        debug_assert_vars_have_decls(root);
-    }
-
-    if (errors.size() > 0)
-        return NULL;
-
-    return root;
-}
-
-void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
-{
     if (self.type == AST_fdecl)
     {
         fprintf(file, "%*cFDECL %s\n", spaces_indent, ' ', self.fdecl.name.nts);
         for (uint32_t i = 0; i < self.fcall.args.size; ++i)
         {
-            dump_ast(file, *self.fdecl.params.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.fdecl.params.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
@@ -1505,7 +1484,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
         fprintf(file, "%*cCALL %s(\n", spaces_indent, ' ', self.fcall.name.nts);
         for (uint32_t i = 0; i < self.fcall.args.size; ++i)
         {
-            dump_ast(file, *self.fcall.args.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.fcall.args.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
@@ -1515,12 +1494,12 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
         fprintf(file, "%*cFUNC %s %s(\n", spaces_indent, ' ', "INT", self.fdef.name.nts);
         for (uint32_t i = 0; i < self.fdef.params.size; ++i)
         {
-            dump_ast(file, *self.fdef.params.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.fdef.params.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c)==[\n", spaces_indent, ' ');
         for (uint32_t i = 0; i < self.fdef.body.size; ++i)
         {
-            dump_ast(file, *self.fdef.body.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.fdef.body.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c]==END FUNC %s\n", spaces_indent, ' ', self.fdef.name.nts);
         return;
@@ -1528,7 +1507,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
     else if (self.type == AST_ret)
     {
         fprintf(file, "%*cRETURN\n", spaces_indent, ' ');
-        if(self.ret.expression) dump_ast(file, *self.ret.expression, spaces_indent + 2);
+        if(self.ret.expression) dump_ast(file, self.ret.expression, spaces_indent + 2);
         return;
     }
     else if (self.type == AST_program)
@@ -1536,7 +1515,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
         fprintf(file, "%*cPROGRAM_START_BLOCK==[\n", spaces_indent, ' ');
         for (uint32_t i = 0; i < self.program.size; ++i)
         {
-            dump_ast(file, *self.program.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.program.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c]==PROGRAM_END_BLOCK\n", spaces_indent, ' ');
         return;
@@ -1546,7 +1525,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
         fprintf(file, "%*cSTART_BLOCK==[\n", spaces_indent, ' ');
         for (uint32_t i = 0; i < self.blocklist.size; ++i)
         {
-            dump_ast(file, *self.blocklist.nodes[i], spaces_indent + 2);
+            dump_ast(file, self.blocklist.nodes[i], spaces_indent + 2);
         }
         fprintf(file, "%*c]==END_BLOCK\n", spaces_indent, ' ');
         return;
@@ -1554,40 +1533,40 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
     else if (self.type == AST_if)
     {
         fprintf(file, "%*cIF\n", spaces_indent, ' ');
-        dump_ast(file, *self.ifdef.condition, spaces_indent + 2);
+        dump_ast(file, self.ifdef.condition, spaces_indent + 2);
         fprintf(file, "%*cTHEN\n", spaces_indent, ' ');
-        dump_ast(file, *self.ifdef.if_true, spaces_indent + 2);
+        dump_ast(file, self.ifdef.if_true, spaces_indent + 2);
         if (self.ifdef.if_false)
         {
             fprintf(file, "%*cELSE\n", spaces_indent, ' ');
-            dump_ast(file, *self.ifdef.if_false, spaces_indent + 2);
+            dump_ast(file, self.ifdef.if_false, spaces_indent + 2);
         }
         return;
     }
     else if (self.type == AST_for)
     {
         fprintf(file, "%*cFOR(\n", spaces_indent, ' ');
-        dump_ast(file, *self.forloop.init, spaces_indent + 2);
-        dump_ast(file, *self.forloop.condition, spaces_indent + 2);
-        dump_ast(file, *self.forloop.update, spaces_indent + 2);
+        dump_ast(file, self.forloop.init, spaces_indent + 2);
+        dump_ast(file, self.forloop.condition, spaces_indent + 2);
+        dump_ast(file, self.forloop.update, spaces_indent + 2);
         fprintf(file, "%*c)\n", spaces_indent, ' ');
-        dump_ast(file, *self.forloop.body, spaces_indent + 2);
+        dump_ast(file, self.forloop.body, spaces_indent + 2);
         return;
     }
     else if (self.type == AST_while)
     {
         fprintf(file, "%*cWHILE(\n", spaces_indent, ' ');
-        dump_ast(file, *self.whileloop.condition, spaces_indent + 2);
-        dump_ast(file, *self.whileloop.body, spaces_indent + 2);
+        dump_ast(file, self.whileloop.condition, spaces_indent + 2);
+        dump_ast(file, self.whileloop.body, spaces_indent + 2);
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
     }
     else if (self.type == AST_dowhile)
     {
         fprintf(file, "%*cDO(\n", spaces_indent, ' ');
-        dump_ast(file, *self.whileloop.body, spaces_indent + 2);
+        dump_ast(file, self.whileloop.body, spaces_indent + 2);
         fprintf(file, "%*cWHILE\n", spaces_indent, ' ');
-        dump_ast(file, *self.whileloop.condition, spaces_indent + 2);
+        dump_ast(file, self.whileloop.condition, spaces_indent + 2);
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
     }
@@ -1599,7 +1578,7 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
     else if (self.type == AST_unop)
     {
         fprintf(file, "%*cUnOp(%c,\n", spaces_indent, ' ', self.unop.op);
-        dump_ast(file, *self.unop.on, spaces_indent + 2);
+        dump_ast(file, self.unop.on, spaces_indent + 2);
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
     }
@@ -1626,17 +1605,17 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
             fprintf(file, "???");
         }
         fprintf(file, "\n");
-        dump_ast(file, *self.binop.left, spaces_indent + 2);
-        dump_ast(file, *self.binop.right, spaces_indent + 2);
+        dump_ast(file, self.binop.left, spaces_indent + 2);
+        dump_ast(file, self.binop.right, spaces_indent + 2);
         fprintf(file, "%*c)\n", spaces_indent, ' ');
         return;
     }
     else if (self.type == AST_terop)
     {
         fprintf(file, "%*c?:(", spaces_indent, ' ');
-        dump_ast(file, *self.terop.condition, spaces_indent + 2);
-        dump_ast(file, *self.terop.if_true, spaces_indent + 2);
-        dump_ast(file, *self.terop.if_false, spaces_indent + 2);
+        dump_ast(file, self.terop.condition, spaces_indent + 2);
+        dump_ast(file, self.terop.if_true, spaces_indent + 2);
+        dump_ast(file, self.terop.if_false, spaces_indent + 2);
         fprintf(file, ")\n");
         return;
     }
@@ -1645,13 +1624,13 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
         if (self.var.is_variable_declaration && self.var.is_variable_assignment)
         {
             fprintf(file, "%*cVar<%s:%s>=\n", spaces_indent, ' ', "INT", self.var.name.nts);
-            dump_ast(file, *self.var.assign_expression, spaces_indent + 2);
+            dump_ast(file, self.var.assign_expression, spaces_indent + 2);
             return;
         }
         else if (self.var.is_variable_assignment)
         {
             fprintf(file, "%*cVar<%s>=\n", spaces_indent, ' ', self.var.name.nts);
-            dump_ast(file, *self.var.assign_expression, spaces_indent + 2);
+            dump_ast(file, self.var.assign_expression, spaces_indent + 2);
             return;
         }
         else if (self.var.is_variable_declaration)
@@ -1693,11 +1672,11 @@ void dump_ast(FILE* file, const ASTNode& self, int spaces_indent)
     fprintf(file, "%*c?????\n", spaces_indent, ' ');
 }
 
-bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<ASTError>& errors)
+bool expect_and_advance(TokenStream& tokens, eToken expected_token, ast_context* ctx)
 {
     if (tokens.next == tokens.end)
     {
-        append_error(errors, tokens.next, "out of tokens");
+        append_error(ctx, tokens.next, "out of tokens");
         return false;
     }
 
@@ -1705,43 +1684,43 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
     {
         switch (expected_token)
         {
-        case '!': append_error(errors, tokens.next, "expected '!'"); break;
-        case '%': append_error(errors, tokens.next, "expected '%'"); break;
-        case '&': append_error(errors, tokens.next, "expected '&'"); break;
-        case '(': append_error(errors, tokens.next, "expected '('"); break;
-        case ')': append_error(errors, tokens.next, "expected ')'"); break;
-        case '*': append_error(errors, tokens.next, "expected '*'"); break;
-        case '+': append_error(errors, tokens.next, "expected '+'"); break;
-        case ',': append_error(errors, tokens.next, "expected ','"); break;
-        case '-': append_error(errors, tokens.next, "expected '-'"); break;
-        case '/': append_error(errors, tokens.next, "expected '/'"); break;
-        case ':': append_error(errors, tokens.next, "expected ':'"); break;
-        case ';': append_error(errors, tokens.next, "expected ';'"); break;
-        case '<': append_error(errors, tokens.next, "expected '<'"); break;
-        case '=': append_error(errors, tokens.next, "expected '='"); break;
-        case '>': append_error(errors, tokens.next, "expected '>'"); break;
-        case '?': append_error(errors, tokens.next, "expected '?'"); break;
-        case '{': append_error(errors, tokens.next, "expected '{'"); break;
-        case '}': append_error(errors, tokens.next, "expected '}'"); break;
-        case '~': append_error(errors, tokens.next, "expected '~'"); break;
-        case eToken::logical_and:           append_error(errors, tokens.next, "expected '&&'"); break;
-        case eToken::logical_or:            append_error(errors, tokens.next, "expected '||'"); break;
-        case eToken::logical_equal:         append_error(errors, tokens.next, "expected '=='"); break;
-        case eToken::logical_not_equal:     append_error(errors, tokens.next, "expected '!='"); break;
-        case eToken::less_than_or_equal:    append_error(errors, tokens.next, "expected '<='"); break;
-        case eToken::greater_than_or_equal: append_error(errors, tokens.next, "expected '>='"); break;
-        case eToken::keyword_int:           append_error(errors, tokens.next, "expected 'int'"); break;
-        case eToken::keyword_return:        append_error(errors, tokens.next, "expected 'return'"); break;
-        case eToken::keyword_if:            append_error(errors, tokens.next, "expected 'if'"); break;
-        case eToken::keyword_else:          append_error(errors, tokens.next, "expected 'else'"); break;
-        case eToken::keyword_for:           append_error(errors, tokens.next, "expected 'for'"); break;
-        case eToken::keyword_while:         append_error(errors, tokens.next, "expected 'while'"); break;
-        case eToken::keyword_do:            append_error(errors, tokens.next, "expected 'do'"); break;
-        case eToken::keyword_break:         append_error(errors, tokens.next, "expected 'break'"); break;
-        case eToken::keyword_continue:      append_error(errors, tokens.next, "expected 'continue'"); break;
+        case '!': append_error(ctx, tokens.next, "expected '!'"); break;
+        case '%': append_error(ctx, tokens.next, "expected '%'"); break;
+        case '&': append_error(ctx, tokens.next, "expected '&'"); break;
+        case '(': append_error(ctx, tokens.next, "expected '('"); break;
+        case ')': append_error(ctx, tokens.next, "expected ')'"); break;
+        case '*': append_error(ctx, tokens.next, "expected '*'"); break;
+        case '+': append_error(ctx, tokens.next, "expected '+'"); break;
+        case ',': append_error(ctx, tokens.next, "expected ','"); break;
+        case '-': append_error(ctx, tokens.next, "expected '-'"); break;
+        case '/': append_error(ctx, tokens.next, "expected '/'"); break;
+        case ':': append_error(ctx, tokens.next, "expected ':'"); break;
+        case ';': append_error(ctx, tokens.next, "expected ';'"); break;
+        case '<': append_error(ctx, tokens.next, "expected '<'"); break;
+        case '=': append_error(ctx, tokens.next, "expected '='"); break;
+        case '>': append_error(ctx, tokens.next, "expected '>'"); break;
+        case '?': append_error(ctx, tokens.next, "expected '?'"); break;
+        case '{': append_error(ctx, tokens.next, "expected '{'"); break;
+        case '}': append_error(ctx, tokens.next, "expected '}'"); break;
+        case '~': append_error(ctx, tokens.next, "expected '~'"); break;
+        case eToken::logical_and:           append_error(ctx, tokens.next, "expected '&&'"); break;
+        case eToken::logical_or:            append_error(ctx, tokens.next, "expected '||'"); break;
+        case eToken::logical_equal:         append_error(ctx, tokens.next, "expected '=='"); break;
+        case eToken::logical_not_equal:     append_error(ctx, tokens.next, "expected '!='"); break;
+        case eToken::less_than_or_equal:    append_error(ctx, tokens.next, "expected '<='"); break;
+        case eToken::greater_than_or_equal: append_error(ctx, tokens.next, "expected '>='"); break;
+        case eToken::keyword_int:           append_error(ctx, tokens.next, "expected 'int'"); break;
+        case eToken::keyword_return:        append_error(ctx, tokens.next, "expected 'return'"); break;
+        case eToken::keyword_if:            append_error(ctx, tokens.next, "expected 'if'"); break;
+        case eToken::keyword_else:          append_error(ctx, tokens.next, "expected 'else'"); break;
+        case eToken::keyword_for:           append_error(ctx, tokens.next, "expected 'for'"); break;
+        case eToken::keyword_while:         append_error(ctx, tokens.next, "expected 'while'"); break;
+        case eToken::keyword_do:            append_error(ctx, tokens.next, "expected 'do'"); break;
+        case eToken::keyword_break:         append_error(ctx, tokens.next, "expected 'break'"); break;
+        case eToken::keyword_continue:      append_error(ctx, tokens.next, "expected 'continue'"); break;
         default:
             debug_break();
-            append_error(errors, tokens.next, "<UNKNOWN> token");
+            append_error(ctx, tokens.next, "<UNKNOWN> token");
         }
         return false;
     }
@@ -1750,12 +1729,14 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, std::vector<
     return true;
 }
 
-void append_error(std::vector<ASTError>& errors, const Token* token, const char* reason)
+void append_error(ast_context* ctx, const Token* token, const char* reason)
 {
-    ASTError e;
-    e.token = token;
-    e.reason = reason;
-    errors.push_back(e);
+    ++ctx->num_errors;
+    ctx->errors = (ASTError*)realloc(ctx->errors, ctx->num_errors * sizeof(ASTError));
+
+    ASTError* e = ctx->errors + ctx->num_errors - 1;
+    e->token = token;
+    e->reason = reason;
 
     debug_break();
 }
@@ -1808,17 +1789,17 @@ void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_locat
     fputc('\n', out);
 }
 
-void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex)
+void dump_ast_errors(FILE* file, const ASTOut* ast, const LexInput& lex)
 {
-    fprintf(file, "\nBEGIN AST ERRORS=====\n");
-    for (size_t i = 0; i < errors.size(); ++i)
+    fprintf(file, "\nBEGIN AST ctx=====\n");
+    for (uint32_t i = 0; i < ast->num_errors; ++i)
     {
-        const ASTError& error = errors[i];
+        const ASTError* error = ast->errors + i;
 
         const char* const file_start = lex.stream;
         const char* const file_end = lex.stream + lex.length;
 
-        const char* error_location = error.token->start;
+        const char* error_location = error->token->start;
 
         // line_num & line_start
         uint64_t line_num = 0;
@@ -1845,13 +1826,13 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
             lex.filename,
             line_num,
             char_num,
-            error.reason);
+            error->reason);
         fprintf(file, "%.*s\n",
             int(line_end - line_start),
             line_start);
 
         // HACK - this is a dangerous way to get previous token.
-        const Token* prev_token = error.token - 1;
+        const Token* prev_token = error->token - 1;
         // END HACK
         if (line_start < prev_token->end)
         {
@@ -1880,6 +1861,48 @@ void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexI
         fputc('^', file);
         fputc('\n', file);
     }
-    fprintf(file, "======END AST ERRORS\n");
+    fprintf(file, "======END AST ctx\n");
     debug_break();
+}
+
+bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out)
+{
+    TokenStream io_tokens;
+    io_tokens.next = tokens;
+    io_tokens.end = tokens + num_tokens;
+
+    ast_context ctx = {};
+
+    ASTNode* root = parse_program(io_tokens, &ctx);
+
+    out->root = root;
+    out->errors = ctx.errors;
+    out->num_errors = ctx.num_errors;
+
+    if (!root)
+        return false;
+    if (ctx.num_errors > 0)
+        return false;
+
+    // fixup var references
+    {
+        assert(root->type == AST_program);
+
+
+        for (uint32_t i = 0; i < root->program.size; ++i)
+        {
+            ASTNode* n = root->program.nodes[i];
+            //if (n->type == AST_fdef)
+            {
+                fixup_var_references(&ctx, n);
+            }
+        }
+
+        debug_assert_vars_have_decls(root);
+    }
+
+    if (ctx.num_errors > 0)
+        return false;
+
+    return true;
 }

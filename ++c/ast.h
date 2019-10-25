@@ -6,18 +6,6 @@
 // Below is an attempt at a simple AST generator. It's meant to be simple.
 // note: ASTNodes are dynamically allocated and never freed.
 
-struct TokenStream
-{
-    const Token* next;
-    const Token* end;
-};
-
-struct ASTError
-{
-    const Token* token;
-    const char* reason;
-};
-
 enum ASTType
 {
     AST_UNKNOWN,
@@ -120,7 +108,20 @@ struct ASTNode
     }; // end union
 }; // end struct ASTNode
 
-ASTNode* ast(TokenStream& tokens, std::vector<ASTError>& errors);
-void dump_ast(FILE* file, const ASTNode& self, int spaces_indent);
-void dump_ast_errors(FILE* file, const std::vector<ASTError>& errors, const LexInput& lex);
+struct ASTError
+{
+    const Token* token;
+    const char* reason;
+};
+
+struct ASTOut
+{
+    ASTNode* root;
+    ASTError* errors;
+    uint64_t num_errors;
+};
+
+bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out); // returns true on success
+void dump_ast(FILE* file, const ASTNode* root, int spaces_indent);
+void dump_ast_errors(FILE* file, const ASTOut* ast_out, const LexInput& lex);
 void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason);

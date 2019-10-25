@@ -136,7 +136,7 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
         if ((tt & TEST_AST) == TEST_AST)
         {
             printf("=== AST ===\n");
-            dump_ast(stdout, *root, 0);
+            dump_ast(stdout, root, 0);
             //dump_ast_errors(stdout, )
             printf("\n");
         }
@@ -267,19 +267,15 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
             dump(tt, lexin, lexout, NULL, NULL);
             continue;
         }
-        TokenStream ast_in;
-        ast_in.next = lexout.tokens;
-        ast_in.end = lexout.tokens + lexout.tokens_size;
 
-        std::vector<ASTError> errors;
         timer.start();
-        ASTNode* root = ast(ast_in, errors);
-        if (!root)
+        ASTOut ast_out;
+        if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
         {
             printf("failed to ast file %s\n", file_path);
             success = false;
             ++test_fail;
-            dump_ast_errors(stdout, errors, lexin);
+            dump_ast_errors(stdout, &ast_out, lexin);
             continue;
         }
         timer.end();
@@ -288,7 +284,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
         // From here on, our tests diverge. If we only wanted to TEST_AST, exit now.
         if ((tt ^ TEST_AST) == 0)
         {
-            dump(tt, lexin, lexout, root, NULL);
+            dump(tt, lexin, lexout, ast_out.root, NULL);
             continue;
         }
 
@@ -305,7 +301,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
         if((tt & TEST_GEN) == TEST_GEN)
         {
             AsmInput asm_in;
-            asm_in.root = root;
+            asm_in.root = ast_out.root;
 
             char asm_file_path[L_tmpnam_s + 2]; // NOTE: +2 for .s
             char exe_file_path[L_tmpnam_s + 4]; // NOTE: +4 for .exe
@@ -365,13 +361,13 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
             timer.end();
             if (clang_ground_truth != our_result)
             {
-                dump(tt | TEST_DUMP_ON, lexin, lexout, root, &asm_in);
+                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, &asm_in);
                 printf("Ground Truth [%d] does not match our result [%d]\n", clang_ground_truth, our_result);
                 debug_break();
             }
             update_perf(&perf->run_exe, timer.milliseconds());
 
-            dump(tt, lexin, lexout, root, &asm_in);
+            dump(tt, lexin, lexout, ast_out.root, &asm_in);
             continue;
         }
 
@@ -387,7 +383,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
         {
             int64_t interp_result;
             timer.start();
-            if (!interp_return_value(root, &interp_result))
+            if (!interp_return_value(ast_out.root, &interp_result))
             {
                 debug_break();
                 printf("Interp failed for [%s].\n", file_path);
@@ -400,7 +396,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
             {
                 printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 " vs Ground Truth: %d\n", 
                     file_path, interp_result, clang_ground_truth);
-                dump(tt | TEST_DUMP_ON, lexin, lexout, root, NULL);
+                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, NULL);
                 debug_break();
             }
             continue;
@@ -440,19 +436,14 @@ void test_simplify(const LexInput& lexin)
     if (!lex(lexin, lexout))
         return;
 
-    TokenStream tokens;
-    tokens.next = lexout.tokens;
-    tokens.end = lexout.tokens + lexout.tokens_size;
-
-    std::vector<ASTError> errors;
-    ASTNode* original = ast(tokens, errors);
-    if (!original)
+    ASTOut ast_out;
+    if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
         return;
 
     printf("=== Attempting Simplification of AST: ===\n");
-    dump_ast(stdout, *original, 0);
+    dump_ast(stdout, ast_out.root, 0);
 
-    ASTNode* simple = original;
+    ASTNode* simple = ast_out.root;
     int reductions = 0;
     while (true)
     {
@@ -464,7 +455,7 @@ void test_simplify(const LexInput& lexin)
             break;
 
         printf("=== SIMPLIFICATION FOUND! ===\n");
-        dump_ast(stdout, *simple, 0);
+        dump_ast(stdout, simple, 0);
     }
 
     printf("=== SIMPLIFICATIONS ATTEMPT COMPLETE, TOTAL REDUCTIONS: %d ===\n", reductions);
@@ -556,25 +547,21 @@ void interpreter_practice()
         printf("]==========\n");
     }
 
-    TokenStream tokens;
-    tokens.next = lexout.tokens;
-    tokens.end = lexout.tokens + lexout.tokens_size;
-    std::vector<ASTError> errors;
-    ASTNode* root = ast(tokens, errors);
-    if(!root)
+    ASTOut ast_out;
+    if(!ast(lexout.tokens, lexout.tokens_size, &ast_out))
     {
         printf("AST FAILED!\n");
-        dump_ast_errors(stdout, errors, lexin);
+        dump_ast_errors(stdout, &ast_out, lexin);
         return;
     }
     else
     {
         printf("AST OK\n");
-        dump_ast(stdout, *root, 0);
+        dump_ast(stdout, ast_out.root, 0);
     }
 
     int64_t result;
-    if (!interp_return_value(root, &result))
+    if (!interp_return_value(ast_out.root, &result))
     {
         printf("INTERPRETER FAILED!\n");
         return;
@@ -680,10 +667,10 @@ int main(int argc, char** argv)
             Test(TEST_INTERP, &perf, "../stage_10/valid/");
             Test(TEST_GEN, &perf, "../stage_10/valid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
-        case 11:
-            Test(TEST_LEX, &perf, "../stage_10+/");
-            Test(TEST_INTERP, &perf, "../stage_10+/");
-            Test(TEST_GEN, &perf, "../stage_10+/");
+        //case 11:
+        //    Test(TEST_LEX, &perf, "../stage_10+/");
+        //    Test(TEST_INTERP, &perf, "../stage_10+/");
+        //    Test(TEST_GEN, &perf, "../stage_10+/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");
@@ -786,15 +773,10 @@ int main(int argc, char** argv)
         }
     }
 
-    TokenStream ast_in;
-    ast_in.next = lex_out.tokens;
-    ast_in.end = lex_out.tokens + lex_out.tokens_size;
-
-    std::vector<ASTError> errors;
-    ASTNode* root = ast(ast_in, errors);
-    if (!root)
+    ASTOut ast_out;
+    if (!ast(lex_out.tokens, lex_out.tokens_size, &ast_out))
     {
-        dump_ast_errors(stdout, errors, lex_in);
+        dump_ast_errors(stdout, &ast_out, lex_in);
         main_timer.end();
         fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();
@@ -803,13 +785,13 @@ int main(int argc, char** argv)
     else if (verbose_print)
     {
         fprintf(stdout, "==ast success!==[\n");
-        dump_ast(stdout, *root, 0);
+        dump_ast(stdout, ast_out.root, 0);
         fprintf(stdout, "\n]\n");
 
         FILE* file;
         if (verbose_print_to_disk && 0 == fopen_s(&file, p.ast_path, "wb"))
         {
-            dump_ast(file, *root, 0);
+            dump_ast(file, ast_out.root, 0);
             fclose(file);
         }
     }
@@ -817,7 +799,7 @@ int main(int argc, char** argv)
     const int ground_truth = get_clang_ground_truth(p.src_path);
 
     int64_t interp_result;
-    if (!interp_return_value(root, &interp_result))
+    if (!interp_return_value(ast_out.root, &interp_result))
     {
         fprintf(stdout, "Interpreter failed.\n");
     }
@@ -828,7 +810,7 @@ int main(int argc, char** argv)
     }
 
     AsmInput asm_in;
-    asm_in.root = root;
+    asm_in.root = ast_out.root;
 
     FILE* asm_test_file;
     if (0 != tmpfile_s(&asm_test_file))
@@ -901,7 +883,7 @@ int main(int argc, char** argv)
         int our_result = system(p.exe_path);
         if (our_result != ground_truth)
         {
-            if(!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, root, &asm_in);
+            if(!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, ast_out.root, &asm_in);
             printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
             debug_break();
         }

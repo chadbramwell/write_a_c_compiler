@@ -45,6 +45,12 @@ C is a good starting point but it has ~200 undefined behaviors and ~150 implemen
   * "d,r = a/b;" or 
   * "d = a/b;" or 
   * "_,r = a/b;" etc...
+* dynamic array type, or mechanisms or whatever cause "t = (type*)realloc(t, num * sizeof(t));" is bananas
+  * type[] t; // type[] is essentially a struct { type* data; uint32_t size; }
+  * type* nt = t.alloc(1);
+  * type* nts = t.alloc(10); //nts is pointed to start of next 10 elements
+  * free(t.data); // users have direct access to underlying data structure
+  * t.size = 0; // clear
 
 (reference: http://www.iso-9899.info/wiki/The_Standard)
 
