@@ -511,20 +511,26 @@ bool interp(ASTNode* root, interp_context* ctx, int64_t* out_result)
         assert(ctx->continue_triggered == false);
         if (!pop_frame(ctx)) RETURN_INTERP_FAILURE;
 
-        // HANDLE SPECIAL CASE: C standard says if main() does not have a return than it should return 0
-        if (root->fdef.body.size == 0)
+        if (ctx->return_triggered)
+            return true;
+
+        if (root->fdef.return_type == eToken::keyword_void)
         {
-            if (root->fdef.name.nts == strings_insert_nts("main").nts)
-            {
-                // technically valid by C standard.
-                *out_result = 0;
-                return true;
-            }
-            // C standard: undefined behavior
-            RETURN_INTERP_FAILURE;
+            // ignore out_result
+            ctx->return_triggered = true;
+            return true;
         }
 
-        return true;
+        // HANDLE SPECIAL CASE: C standard says if main() does not have a return than it should return 0
+        if (root->fdef.name.nts == strings_insert_nts("main").nts)
+        {
+            // technically valid by C standard.
+            *out_result = 0;
+            return true;
+        }
+
+        // C standard: undefined behavior. TODO: Turn this into an error once we have error reporting.
+        RETURN_INTERP_FAILURE;
     }
     else if (root->type == AST_program)
     {

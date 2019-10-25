@@ -48,7 +48,7 @@ struct ast_context
     ASTError* errors;
     uint32_t num_errors;
 
-    //ASTNode* in_func; // used to verify return value of funcs
+    eToken func_return_type; // used to verify return value of funcs
     ASTNodeArray var_decl_stack; // fixup references
 };
 
@@ -123,11 +123,13 @@ ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
     ASTNodeArray func_params = {};
 
     // int or void
+    eToken func_return_type = eToken::UNKNOWN;
     if (tokens.next->type != eToken::keyword_int && tokens.next->type != eToken::keyword_void)
     {
         append_error(ctx, tokens.next, "expected int or void at start of function");
         return NULL;
     }
+    ctx->func_return_type = func_return_type = tokens.next->type;
     ++tokens.next;
     if (tokens.next == tokens.end)
         return NULL;
@@ -217,6 +219,7 @@ ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
     ASTNode* n = new ASTNode;
     n->type = AST_fdef;
     n->fdef.name = func_name;
+    n->fdef.return_type = func_return_type;
     n->fdef.params = func_params;
     n->fdef.body = func_body;
     return n;
@@ -371,7 +374,8 @@ ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx)
             return NULL;
 
         n.ret.expression = parse_expression(tokens, ctx);
-        if (!n.ret.expression)
+        assert(ctx->func_return_type != eToken::UNKNOWN);
+        if (!n.ret.expression && ctx->func_return_type != eToken::keyword_void)
         {
             append_error(ctx, tokens.next, "expected expression after return");
             return NULL;

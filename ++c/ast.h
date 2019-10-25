@@ -58,6 +58,7 @@ struct ASTNode
 
         struct {
             str name;
+            eToken return_type;
             ASTNodeArray params;
             ASTNodeArray body;
         } fdef;

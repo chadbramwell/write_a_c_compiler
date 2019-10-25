@@ -434,6 +434,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
                 {
                     fprintf(ctx->out, "  mov $0, %%rax\n");
                 }
+                else if (n->fdef.return_type == eToken::keyword_void)
+                {
+                }
                 else
                 {
                     // TODO: handle this case of UB (stage_9/valid/fib.c:fib does not have a return at end of function)
