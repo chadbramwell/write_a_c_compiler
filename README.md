@@ -140,8 +140,8 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * That means we support global variables. And all stages complete that have been written by Nora Sandler. (mixed emotions here)
   * Took me a day.
   * Re-wrote how all variables are generated. They now generate a string as offset from rsp (ex: 32(%rsp)) or as an offset from rip for global vars (ex: my_global(%rip)).
-* 10/25/2019 - **STAGE 10+ START** Going it on my own from here. First step is return value of void for functions.
- * 
+* 10/25/2019 - **STAGE 10+ START** Going it on my own from here. 
+  * (3 hours) Functions now support a return type of void.
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
