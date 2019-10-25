@@ -51,28 +51,36 @@ Token* push_id(LexOutput* out, const char* start, const char* end)
     return token;
 }
 
+void try_resolve_keyword(Token* io_token)
+{
+    // cool warning from MSVC from previous code:
+    // for "io_token->type == eToken::keyword_int;" when I intended an assignment
+    // 1>c:\users\chad\desktop\practice\write_a_c_compiler\++c\lex.cpp(58): warning C4553: '==': result of expression not used; did you intend '='?
+
+    if (io_token->identifier.nts == strings_insert_nts("void").nts)
+        io_token->type = eToken::keyword_void;
+    else if (io_token->identifier.nts == strings_insert_nts("int").nts)
+        io_token->type = eToken::keyword_int;
+    else if (io_token->identifier.nts == strings_insert_nts("return").nts)
+        io_token->type = eToken::keyword_return;
+    else if (io_token->identifier.nts == strings_insert_nts("if").nts)
+        io_token->type = eToken::keyword_if;
+    else if (io_token->identifier.nts == strings_insert_nts("else").nts)
+        io_token->type = eToken::keyword_else;
+    else if (io_token->identifier.nts == strings_insert_nts("for").nts)
+        io_token->type = eToken::keyword_for;
+    else if (io_token->identifier.nts == strings_insert_nts("while").nts)
+        io_token->type = eToken::keyword_while;
+    else if (io_token->identifier.nts == strings_insert_nts("do").nts)
+        io_token->type = eToken::keyword_do;
+    else if (io_token->identifier.nts == strings_insert_nts("break").nts)
+        io_token->type = eToken::keyword_break;
+    else if (io_token->identifier.nts == strings_insert_nts("continue").nts)
+        io_token->type = eToken::keyword_continue;
+}
+
 bool lex(const LexInput& input, LexOutput& output)
 {
-    struct keyword
-    {
-        const char* nts;
-        eToken token_id;
-    };
-#define KW(id) {strings_insert_nts(#id).nts, eToken::keyword_##id}
-    const keyword keywords[] = {
-        KW(int),
-        KW(return),
-        KW(if),
-        KW(else),
-        KW(for),
-        KW(while),
-        KW(do),
-        KW(break),
-        KW(continue)
-    };
-#undef KW
-    const int kNumKeywords = 9;
-
     // store length of output buffer and wipe it's length for return value
     // code below will write to and increment end_output
     const char* stream = input.stream;
@@ -241,15 +249,7 @@ bool lex(const LexInput& input, LexOutput& output)
             Token* token = push_id(&output, stream, token_end);
             stream = token_end;
 
-            for (int i = 0; i < kNumKeywords; ++i)
-            {
-                if (token->identifier.nts == keywords[i].nts)
-                {
-                    token->type = keywords[i].token_id;
-                    break;
-                }
-            }
-
+            try_resolve_keyword(token);
             continue;
         }
 
@@ -302,6 +302,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
         case eToken::logical_not_equal: fprintf(file, "!="); continue;
         case eToken::less_than_or_equal: fprintf(file, "<="); continue;
         case eToken::greater_than_or_equal: fprintf(file, ">="); continue;
+        case eToken::keyword_void: fprintf(file, "void "); continue;
         case eToken::keyword_int: fprintf(file, "int "); continue;
         case eToken::keyword_return: fprintf(file, "return "); continue;
         case eToken::keyword_if: fprintf(file, "if "); continue;
