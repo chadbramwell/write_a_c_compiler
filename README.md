@@ -242,6 +242,21 @@ Perf Results  [low,    high,   avg   ]
   grnd_truth: [187.70ms, 407.30ms, 205.75ms]
   interp:     [0.00ms, 9.13ms, 0.10ms]
 ```
+STAGE 10+ Dir refactor and support for cleaning up .ilk and .pdb. New perf display. This makes it apparent to me that I just need to dump my own exe 'cause that's multiple orders of magnitude differnce between generating asm and getting clang to convert that asm into a binary.
+```
+Tests took 77466.65ms
+Perf Results  [samples,      total,        avg,        low,       high]
+  read_file:  [    416,    65.37ms,     0.16ms,     0.08ms,     3.32ms]
+  lex:        [    416,     3.54ms,     0.01ms,     0.00ms,     0.08ms]
+  ast:        [    238,     5.45ms,     0.02ms,     0.01ms,     0.13ms]
+  gen_asm:    [    119,     8.56ms,     0.07ms,     0.03ms,     0.36ms]
+  gen_exe:    [    119, 16646.88ms,   139.89ms,   115.58ms,   168.23ms]
+  run_exe:    [    119,  6838.62ms,    57.47ms,    47.71ms,    79.56ms]
+  grnd_truth: [    238, 53288.00ms,   223.90ms,   183.48ms,   560.56ms]
+  interp:     [    119,    12.12ms,     0.10ms,     0.00ms,     9.93ms]
+  cleanup:    [     25,     2.22ms,     0.09ms,     0.05ms,     0.17ms]
+Unaccounted for: 595.89ms
+```
 
 ## TODO (other than Stages)
 * Eliminate clang depedency (by generating binary directly)
