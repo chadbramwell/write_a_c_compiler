@@ -51,6 +51,7 @@ C is a good starting point but it has ~200 undefined behaviors and ~150 implemen
   * type* nts = t.alloc(10); //nts is pointed to start of next 10 elements
   * free(t.data); // users have direct access to underlying data structure
   * t.size = 0; // clear
+* Here's something simple: char path[MAX_PATH]; should auto-generate compile-time data that allows easy access to MAX_PATH. I'm thinking "path.length" 
 
 (reference: http://www.iso-9899.info/wiki/The_Standard)
 
