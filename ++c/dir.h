@@ -7,12 +7,12 @@
 
 struct DirectoryIter;
 
-DirectoryIter* dopen(const char* path, const char* filter = "*");
-bool dnext(DirectoryIter* dir);
+bool dopen(DirectoryIter** io_iter, const char* path, const char* filter = "*");
+void dclose(DirectoryIter** io_iter);
+bool dnext(DirectoryIter* io_iter);
 
-bool disdir(DirectoryIter* dir);
-const char* dfname(DirectoryIter* dir);
-const char* dfpath(DirectoryIter* dir);
-uint64_t dfsize(DirectoryIter* dir);
+bool disdir(DirectoryIter* io_iter);
+bool dendswith(DirectoryIter* io_iter, const char* str);
+const char* dfpath(DirectoryIter* io_iter);
 
-bool get_absolute_path(const char* partial_path, char (*out_abs_path)[260]);
+bool get_absolute_path(const char* partial_path, char(*out_abs_path)[260]);

@@ -120,6 +120,89 @@ void path_init(path* p, const char* filename)
         debug_break();
 }
 
+struct perf_numbers
+{
+    std::vector<float> read_file;
+    std::vector<float> lex;
+    std::vector<float> ast;
+    std::vector<float> gen_asm;
+    std::vector<float> gen_exe;
+    std::vector<float> run_exe;
+    std::vector<float> ground_truth;
+    std::vector<float> interp;
+    std::vector<float> cleanup;
+};
+void update_perf(std::vector<float>* p, float ms)
+{
+    p->push_back(ms);
+}
+bool get_perf(std::vector<float>* p, float* o_min, float* o_max, float* o_avg, float* o_total)
+{
+    float* iter = p->data();
+    float* end = p->data() + p->size();
+
+    if (iter == end)
+        return false;
+
+    float min, max, avg;
+    min = max = avg = *iter;
+
+    ++iter;
+
+    for (; iter != end; ++iter)
+    {
+        avg += *iter;
+
+        if (*iter < min)
+            min = *iter;
+        if (*iter > max)
+            max = *iter;
+    }
+
+    *o_min = min;
+    *o_max = max;
+    *o_avg = avg / p->size();
+    *o_total = avg;
+
+    return true;
+}
+float print_perf(std::vector<float>* p, const char* preamble, const char* postamble)
+{
+    float min, max, avg, total;
+    if (!get_perf(p, &min, &max, &avg, &total))
+        return 0.0f;
+
+    printf("%s[%7zu, %8.2fms, %8.2fms, %8.2fms, %8.2fms]%s", preamble, p->size(), total, avg, min, max, postamble);
+    return total;
+}
+
+void cleanup_artifacts(std::vector<float>* p, const char* path)
+{
+    Timer t;
+    t.start();
+
+    DirectoryIter* dir = NULL; 
+    if (!dopen(&dir, path)) return;
+
+    do
+    {
+        if (disdir(dir))
+            continue;
+
+        if (!dendswith(dir, ".ilk") && !dendswith(dir, ".pdb"))
+            continue;
+
+        char delete_command[260];
+        sprintf_s(delete_command, "del %s", dfpath(dir));
+        system(delete_command);
+
+    } while (dnext(dir));
+    dclose(&dir);
+
+    t.end();
+    update_perf(p, t.milliseconds());
+}
+
 void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
 {
     if (tt & TEST_DUMP_ON)
@@ -162,63 +245,10 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
     }
 }
 
-struct perf_numbers
+void Test(TestType tt, perf_numbers* perf, const char* path)
 {
-    std::vector<float> read_file;
-    std::vector<float> lex;
-    std::vector<float> ast;
-    std::vector<float> gen_asm;
-    std::vector<float> gen_exe;
-    std::vector<float> run_exe;
-    std::vector<float> ground_truth;
-    std::vector<float> interp;
-};
-void update_perf(std::vector<float>* p, float ms)
-{
-    p->push_back(ms);
-}
-bool get_perf(std::vector<float>* p, float* o_min, float* o_max, float* o_avg)
-{
-    float* iter = p->data();
-    float* end = p->data() + p->size();
-
-    if (iter == end)
-        return false;
-
-    float min, max, avg;
-    min = max = avg = *iter;
-
-    ++iter;
-
-    for (; iter != end; ++iter)
-    {
-        avg += *iter;
-
-        if (*iter < min)
-            min = *iter;
-        if (*iter > max)
-            max = *iter;
-    }
-
-    *o_min = min;
-    *o_max = max;
-    *o_avg = avg / p->size();
-
-    return true;
-}
-void print_perf(std::vector<float>* p, const char* preamble, const char* postamble)
-{
-    float min, max, avg;
-    if (!get_perf(p, &min, &max, &avg))
-        return;
-
-    printf("%s[%.2fms, %.2fms, %.2fms]%s", preamble, min, max, avg, postamble);
-}
-
-void Test(TestType tt, perf_numbers* perf, const char* directory)
-{
-    DirectoryIter* dir = dopen(directory, "*.c");
-    if (!dir) return;
+    DirectoryIter* dir = NULL;
+    if (!dopen(&dir, path, "*.c")) return;
 
     int test_count = 0;
     int test_fail = 0;
@@ -403,6 +433,7 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
         }
 
     } while (dnext(dir));
+    dclose(&dir);
 
     // print results
     switch (tt)
@@ -413,11 +444,11 @@ void Test(TestType tt, perf_numbers* perf, const char* directory)
     case TEST_INTERP: printf("INTERPRETER"); break;
     default:
         debug_break();
-        printf("???[%s]:", directory);
+        printf("???[%s]:", path);
     }
     success 
-        ? printf("[%s]:OK (%d tests)\n", directory, test_count) 
-        : printf("[%s]:FAILED. Tests Passed: %d/%d\n", directory, (test_count - test_fail), test_count);
+        ? printf("[%s]:OK (%d tests)\n", path, test_count) 
+        : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
 }
 
 void init_lex_to_ret2(LexInput& lex_in)
@@ -601,18 +632,24 @@ int main(int argc, char** argv)
             Test(TEST_LEX, &perf, "../stage_1/invalid/");
             Test(TEST_INTERP, &perf, "../stage_1/valid/");
             Test(TEST_GEN, &perf, "../stage_1/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_1/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_1/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 2:
             Test(TEST_LEX, &perf, "../stage_2/valid/");
             Test(TEST_LEX, &perf, "../stage_2/invalid/");
             Test(TEST_INTERP, &perf, "../stage_2/valid/");
             Test(TEST_GEN, &perf, "../stage_2/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_2/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_2/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 3:
             Test(TEST_LEX, &perf, "../stage_3/valid/");
             Test(TEST_LEX, &perf, "../stage_3/invalid/");
             Test(TEST_INTERP, &perf, "../stage_3/valid/");
             Test(TEST_GEN, &perf, "../stage_3/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_3/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_3/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 4:
             Test(TEST_LEX, &perf, "../stage_4/valid/");
@@ -622,12 +659,17 @@ int main(int argc, char** argv)
             Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
             Test(TEST_GEN, &perf, "../stage_4/valid/");
             Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
+            cleanup_artifacts(&perf.cleanup, "../stage_4/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_4/valid_skip_on_failure/");
+            cleanup_artifacts(&perf.cleanup, "../stage_4/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 5:
             Test(TEST_LEX, &perf, "../stage_5/valid/");
             Test(TEST_LEX, &perf, "../stage_5/invalid/");
             Test(TEST_INTERP, &perf, "../stage_5/valid/");
             Test(TEST_GEN, &perf, "../stage_5/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_5/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_5/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 6:
             Test(TEST_LEX, &perf, "../stage_6/valid/statement/");
@@ -638,39 +680,52 @@ int main(int argc, char** argv)
             Test(TEST_INTERP, &perf, "../stage_6/valid/expression/");
             Test(TEST_GEN, &perf, "../stage_6/valid/statement/");
             Test(TEST_GEN, &perf, "../stage_6/valid/expression/");
+            cleanup_artifacts(&perf.cleanup, "../stage_6/valid/statement/");
+            cleanup_artifacts(&perf.cleanup, "../stage_6/invalid/statement/");
+            cleanup_artifacts(&perf.cleanup, "../stage_6/valid/expression/");
+            cleanup_artifacts(&perf.cleanup, "../stage_6/invalid/expression/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 7:
             Test(TEST_LEX, &perf, "../stage_7/valid/");
             Test(TEST_LEX, &perf, "../stage_7/invalid/");
             Test(TEST_INTERP, &perf, "../stage_7/valid/");
             Test(TEST_GEN, &perf, "../stage_7/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_7/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_7/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 8:
             Test(TEST_LEX, &perf, "../stage_8/valid/");
             Test(TEST_LEX, &perf, "../stage_8/invalid/");
             Test(TEST_INTERP, &perf, "../stage_8/valid/");
             Test(TEST_GEN, &perf, "../stage_8/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_8/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_8/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 9:
             Test(TEST_LEX, &perf, "../stage_9/valid/");
             Test(TEST_LEX, &perf, "../stage_9/invalid/");
             Test(TEST_INTERP, &perf, "../stage_9/valid/");
             Test(TEST_GEN, &perf, "../stage_9/valid/");
-
             Test(TEST_LEX, &perf, "../stage_9/");
             Test(TEST_INTERP, &perf, "../stage_9/");
             Test(TEST_GEN, &perf, "../stage_9/");
+            cleanup_artifacts(&perf.cleanup, "../stage_9/");
+            cleanup_artifacts(&perf.cleanup, "../stage_9/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_9/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 10:
             Test(TEST_LEX, &perf, "../stage_10/valid/");
             Test(TEST_LEX, &perf, "../stage_10/invalid/");
             Test(TEST_INTERP, &perf, "../stage_10/valid/");
             Test(TEST_GEN, &perf, "../stage_10/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_10/valid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_10/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 11:
             Test(TEST_LEX, &perf, "../stage_10+/");
             Test(TEST_INTERP, &perf, "../stage_10+/");
             Test(TEST_GEN, &perf, "../stage_10+/");
+            cleanup_artifacts(&perf.cleanup, "../stage_10+/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");
@@ -681,16 +736,20 @@ int main(int argc, char** argv)
         timer.end();
         printf("Tests took %.2fms\n", timer.milliseconds());
 
-        printf(                         "Perf Results  [low,    high,   avg   ]\n");
-        print_perf(&perf.read_file,     "  read_file:  ", "\n");
-        print_perf(&perf.lex,           "  lex:        ", "\n");
-        print_perf(&perf.ast,           "  ast:        ", "\n");
-        print_perf(&perf.gen_asm,       "  gen_asm:    ", "\n");
-        print_perf(&perf.gen_exe,       "  gen_exe:    ", "\n");
-        print_perf(&perf.run_exe,       "  run_exe:    ", "\n");
-        print_perf(&perf.ground_truth,  "  grnd_truth: ", "\n");
-        print_perf(&perf.interp,        "  interp:     ", "\n");
+        float tracked_total = 0.0f;
 
+                         printf(                         "Perf Results  [samples,      total,        avg,        low,       high]\n");
+        tracked_total += print_perf(&perf.read_file,     "  read_file:  ", "\n");
+        tracked_total += print_perf(&perf.lex,           "  lex:        ", "\n");
+        tracked_total += print_perf(&perf.ast,           "  ast:        ", "\n");
+        tracked_total += print_perf(&perf.gen_asm,       "  gen_asm:    ", "\n");
+        tracked_total += print_perf(&perf.gen_exe,       "  gen_exe:    ", "\n");
+        tracked_total += print_perf(&perf.run_exe,       "  run_exe:    ", "\n");
+        tracked_total += print_perf(&perf.ground_truth,  "  grnd_truth: ", "\n");
+        tracked_total += print_perf(&perf.interp,        "  interp:     ", "\n");
+        tracked_total += print_perf(&perf.cleanup,       "  cleanup:    ", "\n");
+                         printf(                         "Unaccounted for: %.2fms\n", (timer.milliseconds() - tracked_total));
+        
         test_simplify_double_negative();
         test_simplify_1_plus_2();
         test_simplify_dn_and_1p2();

@@ -6,7 +6,8 @@
 struct DirectoryIter
 {
     char fpath[MAX_PATH];
-    size_t dpath_cutoff_of_fpath;
+    char* fname; //points into fpath
+    size_t room_left_for_fname;
     
     WIN32_FIND_DATAA data;
     HANDLE handle;
@@ -19,96 +20,72 @@ bool is_slash(char c)
     return c == '\\' || c == '/';
 }
 
-DirectoryIter* dopen(const char* path, const char* filter)
+bool dopen(DirectoryIter** io_iter, const char* path, const char* filter)
 {
-    DirectoryIter* dir_ptr = (DirectoryIter*)malloc(sizeof(DirectoryIter));
-    DirectoryIter& dir = *dir_ptr;
-    dir.dpath_cutoff_of_fpath = strlen(path);
-    memcpy(dir.fpath, path, dir.dpath_cutoff_of_fpath);
-
-    // support .. in middle of path
-    // we have to do this because FindFirstFile only supports .. at start of path. dumb.
+    if (!io_iter)
     {
-        char* end = dir.fpath + dir.dpath_cutoff_of_fpath;
-        char* write_location = dir.fpath + 2; // +2 to skip past .. if it happens to be at beginning of path
-        char* read_location = dir.fpath + 2;
-
-        for (; read_location != end;)
-        {
-            if (read_location + 1 < end &&
-                read_location[0] == '.' &&
-                read_location[1] == '.')
-            {
-                write_location -= 2; // go back past . and presumably slash
-                while (write_location > dir.fpath && !is_slash(*write_location))
-                    --write_location;
-                assert(write_location > dir.fpath);
-                assert(is_slash(*write_location));
-                
-                read_location += 2;
-                continue;
-            }
-            if (write_location != read_location)
-            {
-                *write_location = *read_location;
-            }
-            ++write_location;
-            ++read_location;
-        }
-
-        dir.dpath_cutoff_of_fpath = write_location - dir.fpath;
+        debug_break();
+        return false;
     }
+    *io_iter = NULL; // will get set on success.
 
-    if (!is_slash(dir.fpath[dir.dpath_cutoff_of_fpath-1]))
-    {
-        dir.fpath[dir.dpath_cutoff_of_fpath] = '/';
-        ++dir.dpath_cutoff_of_fpath;
-    }
+    DirectoryIter* dir = (DirectoryIter*)malloc(sizeof(DirectoryIter));
+    
+
+    DWORD strlen = GetFullPathNameA(path, MAX_PATH, dir->fpath, &dir->fname);
+    assert(strlen != 0);
+    if (dir->fname == NULL)
+        dir->fname = dir->fpath + strlen;
+
+    dir->room_left_for_fname = MAX_PATH - strlen;
+
 
     // temporarily using dir.fpath for directory searching
-    size_t filter_len = strlen(filter);
-    memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, filter, filter_len);
-    dir.fpath[dir.dpath_cutoff_of_fpath + filter_len] = 0;
-    dir.handle = FindFirstFileA(dir.fpath, &dir.data);
+    errno_t err = strcpy_s(dir->fname, dir->room_left_for_fname, filter);
+    if (err)
+    {
+        debug_break();
+        return err;
+    }
+    dir->handle = FindFirstFileA(dir->fpath, &dir->data);
 
-    if (dir.handle == INVALID_HANDLE_VALUE)
+    if (dir->handle == INVALID_HANDLE_VALUE)
     {
         DWORD error_code = GetLastError(); //https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes
-        printf("dopen failed to open (%s) with error (%d)\n", dir.fpath, error_code);
+        printf("dopen failed to open (%s) with error (%d)\n", dir->fpath, error_code);
 
         if (error_code == ERROR_PATH_NOT_FOUND)
         {
             char cwd[MAX_PATH];
             GetCurrentDirectoryA(MAX_PATH, cwd);
-            printf("\t" TO_STR(ERROR_PATH_NOT_FOUND) "(%d) - could not be found from current working directory: (%s)", ERROR_PATH_NOT_FOUND, cwd);
+            printf("\t" TO_STR(ERROR_PATH_NOT_FOUND) "(%d) - could not be found from current working directory: (%s)\n", ERROR_PATH_NOT_FOUND, cwd);
         }
         else if (error_code == ERROR_INVALID_PARAMETER)
-            printf("\t" TO_STR(ERROR_INVALID_PARAMETER) "(%d) - most likely caused by not adding '*' at end of path", ERROR_INVALID_PARAMETER);
+            printf("\t" TO_STR(ERROR_INVALID_PARAMETER) "(%d) - most likely caused by not adding '*' at end of path\n", ERROR_INVALID_PARAMETER);
+        else if (error_code == ERROR_FILE_NOT_FOUND)
+            printf("\t" TO_STR(ERROR_FILE_NOT_FOUND) "(%d) - uhh... no files found for that type... I think...\n", ERROR_FILE_NOT_FOUND);
 
         debug_break();
-        free(dir_ptr);
-        return NULL;
+        return false;
     }
 
-    size_t fname_len = strlen(dir.data.cFileName);
-    memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, dir.data.cFileName, fname_len);
-    dir.fpath[dir.dpath_cutoff_of_fpath + fname_len] = 0;
-
-    return dir_ptr;
+    strcpy_s(dir->fname, dir->room_left_for_fname, dir->data.cFileName);
+    *io_iter = dir;
+    return true;
 }
 
-bool dnext(DirectoryIter* dir_ptr)
+void dclose(DirectoryIter** io_iter)
 {
-    DirectoryIter& dir = *dir_ptr;
+    free(*io_iter);
+    *io_iter = NULL;
+}
 
-    BOOL ok = FindNextFileA(dir.handle, &dir.data);
+bool dnext(DirectoryIter* io_iter)
+{
+    BOOL ok = FindNextFileA(io_iter->handle, &io_iter->data);
 
     if (ok)
-    {
-        size_t fname_len = strlen(dir.data.cFileName);
-        memcpy(dir.fpath + dir.dpath_cutoff_of_fpath, dir.data.cFileName, fname_len);
-        dir.fpath[dir.dpath_cutoff_of_fpath + fname_len] = 0;
-    }
+        strcpy_s(io_iter->fname, io_iter->room_left_for_fname, io_iter->data.cFileName);
 
     return ok;
 }
@@ -118,9 +95,23 @@ bool disdir(DirectoryIter* dir)
     return dir->data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
 }
 
-const char* dfname(DirectoryIter* dir)
+bool dendswith(DirectoryIter* io_iter, const char* str)
 {
-    return dir->data.cFileName;
+    const char* si = str;
+    while (*si) ++si;
+
+    const char* ni = io_iter->fname;
+    while (*ni) ++ni;
+
+    while (si >= str && ni >= io_iter->fname)
+    {
+        if (*si != *ni)
+            return false;
+        --si;
+        --ni;
+    }
+
+    return true;
 }
 
 const char* dfpath(DirectoryIter* dir)
@@ -128,15 +119,7 @@ const char* dfpath(DirectoryIter* dir)
     return dir->fpath;
 }
 
-uint64_t dfsize(DirectoryIter* dir)
-{
-    uint64_t size = dir->data.nFileSizeHigh;
-    size <<= 32;
-    size |= dir->data.nFileSizeLow;
-    return size;
-}
-
-bool get_absolute_path(const char* partial_path, char (*out_abs_path)[MAX_PATH])
+bool get_absolute_path(const char* partial_path, char(*out_abs_path)[MAX_PATH])
 {
     DWORD copied_or_required_chars = GetFullPathNameA(partial_path, MAX_PATH, *out_abs_path, NULL);
     return copied_or_required_chars < MAX_PATH;
