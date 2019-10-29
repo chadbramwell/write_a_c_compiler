@@ -275,6 +275,56 @@ bool lex(const LexInput& input, LexOutput& output)
             continue;
         }
 
+        if (*stream == '\'')
+        {
+            const char* token_start = stream++;
+            uint64_t value = 0;
+            while (stream != end_stream && *stream != '\'' && (stream - token_start) <= 8)
+            {
+                unsigned char orvalue = *stream;
+
+                // https://en.cppreference.com/w/cpp/language/escape
+                if (*stream == '\\')
+                {
+                    ++stream;
+                    assert(stream < end_stream);
+                    switch (*stream)
+                    {
+                    case '\'': orvalue = 0x27; break; // single quote
+                    case '"': orvalue = 0x22; break; // double quote
+                    case '?': orvalue = 0x3f; break; // question mark
+                    case '\\': orvalue = 0x5c; break; // backslash
+                    case 'a': orvalue = 0x07; break; // audible bell
+                    case 'b': orvalue = 0x08; break; // backspace
+                    case 'f': orvalue = 0x0c; break; // form feed - new page
+                    case 'n': orvalue = 0x0a; break; // line feed - new line
+                    case 'r': orvalue = 0x0d; break; // carriage return
+                    case 't': orvalue = 0x09; break; // horizontal tab
+                    case 'v': orvalue = 0x0b; break; // vertical tab
+                    default:
+                        output.failure_location = stream;
+                        output.failure_reason = "[lex] invalid or currently unhandled escape type in single quotes.";
+                        debug_break();
+                        return false;
+                    }
+                }
+
+                value <<= 1;
+                value |= orvalue;
+                ++stream;
+            }
+            if (*stream != '\'')
+            {
+                output.failure_location = stream;
+                output.failure_reason = "[lex] missing end of single quote. max length is 8 chars.";
+                debug_break();
+                return false;
+            }
+            ++stream;
+            push_num(&output, value, token_start, stream);
+            continue;
+        }
+
         output.failure_location = stream;
         output.failure_reason = "[lex] unsupported data in input";
         debug_break();

@@ -189,7 +189,10 @@ void cleanup_artifacts(std::vector<float>* p, const char* path)
         if (disdir(dir))
             continue;
 
-        if (!dendswith(dir, ".ilk") && !dendswith(dir, ".pdb"))
+        if (!dendswith(dir, ".ilk") 
+            && !dendswith(dir, ".pdb")
+            && !dendswith(dir, ".s")
+            && !dendswith(dir, ".exe"))
             continue;
 
         char delete_command[260];
