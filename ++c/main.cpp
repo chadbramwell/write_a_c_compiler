@@ -288,7 +288,10 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
             draw_error_caret_at(stdout, lexin, lexout.failure_location, lexout.failure_reason);
             success = false;
             ++test_fail;
-            printf("failed to lex file %s\n", file_path);
+            printf("failed to lex file %s\nComparing to Clang error:\n", file_path);
+            char buff[256];
+            sprintf_s(buff, "clang %s", file_path);
+            system(buff);
             continue;
         }
         timer.end();
@@ -726,9 +729,11 @@ int main(int argc, char** argv)
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 11:
             Test(TEST_LEX, &perf, "../stage_10+/");
+            Test(TEST_LEX, &perf, "../stage_10+/invalid/");
             Test(TEST_INTERP, &perf, "../stage_10+/");
             Test(TEST_GEN, &perf, "../stage_10+/");
             cleanup_artifacts(&perf.cleanup, "../stage_10+/");
+            cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");

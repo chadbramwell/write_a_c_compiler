@@ -142,6 +142,9 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * Re-wrote how all variables are generated. They now generate a string as offset from rsp (ex: 32(%rsp)) or as an offset from rip for global vars (ex: my_global(%rip)).
 * 10/25/2019 - **STAGE 10+ START** Going it on my own from here. 
   * (3 hours) Functions now support a return type of void.
+* 10/28/2019
+  * (two days?) rewrote some directory iteration code. cleanup_artifacts function
+  * (1 hour) Added support for single-quote values. They are interpreted as uint64_t. i.e. 'A' gives back a value of 65. Now we can "putchar('H');" instead of "putchar(72);" like we did in stage_9's hello_world.c. NOTE: I'm on my own here, no clue if this is correct behavior. I'm assuming I'll add proper error-checking if a user attempts to stuff values into non-int types (once we support them).
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 

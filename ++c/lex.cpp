@@ -304,12 +304,11 @@ bool lex(const LexInput& input, LexOutput& output)
                     default:
                         output.failure_location = stream;
                         output.failure_reason = "[lex] invalid or currently unhandled escape type in single quotes.";
-                        debug_break();
                         return false;
                     }
                 }
 
-                value <<= 1;
+                value <<= 8;
                 value |= orvalue;
                 ++stream;
             }
@@ -317,7 +316,6 @@ bool lex(const LexInput& input, LexOutput& output)
             {
                 output.failure_location = stream;
                 output.failure_reason = "[lex] missing end of single quote. max length is 8 chars.";
-                debug_break();
                 return false;
             }
             ++stream;

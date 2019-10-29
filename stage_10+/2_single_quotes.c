@@ -1,7 +1,7 @@
 
 int main()
 {
-    int v = 'A';
+    int v = 'A' + 1;
     putchar(v);
-    return 1 + 'A' + 1;
+    return 'ABCD';
 }
