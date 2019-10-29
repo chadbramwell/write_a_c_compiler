@@ -729,11 +729,11 @@ int main(int argc, char** argv)
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 11:
             Test(TEST_LEX, &perf, "../stage_10+/");
-            Test(TEST_LEX, &perf, "../stage_10+/invalid/");
+            Test(TEST_LEX, &perf, "../stage_10+/invalid_lex/");
             Test(TEST_INTERP, &perf, "../stage_10+/");
             Test(TEST_GEN, &perf, "../stage_10+/");
             cleanup_artifacts(&perf.cleanup, "../stage_10+/");
-            cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid/");
+            cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid_lex/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");
