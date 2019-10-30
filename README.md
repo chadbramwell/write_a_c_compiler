@@ -22,8 +22,8 @@ C support from following Nora's Compiler series:
 * functions (max 4 params)
 
 Additional C support (post-series):
-* 'A', 'ABCD', etc will resolve to a uint64_t
-* function return value of void
+* 'A' resolves to 65 (and can support upto 8 characters), storage is uint64_t
+* void return value
 * // and /**/ comments
 
 Missing C support:
