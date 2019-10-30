@@ -216,7 +216,7 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
         printf("\n");
         if ((tt & TEST_LEX) == TEST_LEX) {
             printf("=== LEX ===\n");
-            dump_lex(stdout, lexout);
+            dump_lex(stdout, &lexout);
             printf("\n");
         }
         if ((tt & TEST_AST) == TEST_AST)
@@ -242,7 +242,7 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
             assert(0 == system(temp_cmd));
             LexInput temp2;
             assert(read_file_into_lex_input(temp_name, &temp2));
-            fprintf(stdout, "%*s\n", int(temp2.length), temp2.stream);
+            fprintf(stdout, "%.*s\n", int(temp2.length), temp2.stream);
         }
         printf("=== END DEBUG INFO ===\n");
     }
@@ -283,7 +283,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
 
         LexOutput lexout;
         timer.start();
-        if (!lex(lexin, lexout))
+        if (!lex(&lexin, &lexout))
         {
             draw_error_caret_at(stdout, lexin, lexout.failure_location, lexout.failure_reason);
             success = false;
@@ -470,7 +470,7 @@ void init_lex_to_ret2(LexInput& lex_in)
 void test_simplify(const LexInput& lexin)
 {
     LexOutput lexout;
-    if (!lex(lexin, lexout))
+    if (!lex(&lexin, &lexout))
         return;
 
     ASTOut ast_out;
@@ -496,7 +496,7 @@ void test_simplify(const LexInput& lexin)
     }
 
     printf("=== SIMPLIFICATIONS ATTEMPT COMPLETE, TOTAL REDUCTIONS: %d ===\n", reductions);
-    printf("BEFORE: "); dump_lex(stdout, lexout);
+    printf("BEFORE: "); dump_lex(stdout, &lexout);
     printf("\n AFTER: ");  dump_simplify(stdout, simple);
 }
 
@@ -570,17 +570,17 @@ void interpreter_practice()
     lexin.length = (out - buffer);
 
     LexOutput lexout;
-    if (!lex(lexin, lexout))
+    if (!lex(&lexin, &lexout))
     {
         printf("LEX FAILED! %s\n", lexout.failure_reason);
-        dump_lex(stdout, lexout);
+        dump_lex(stdout, &lexout);
         printf("\n");
         return;
     }
     else
     {
         printf("LEX OK==========[");
-        dump_lex(stdout, lexout);
+        dump_lex(stdout, &lexout);
         printf("]==========\n");
     }
 
@@ -817,10 +817,10 @@ int main(int argc, char** argv)
     path_init(&p, lex_in.filename);
     
     LexOutput lex_out;
-    if (!lex(lex_in, lex_out))
+    if (!lex(&lex_in, &lex_out))
     {
         fprintf(stdout, "lex failure: %s\n", lex_out.failure_reason);
-        dump_lex(stdout, lex_out);
+        dump_lex(stdout, &lex_out);
         main_timer.end();
         fprintf(timer_log, "\n[%s] lex fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();
@@ -829,13 +829,13 @@ int main(int argc, char** argv)
     else if (verbose_print)
     {
         fprintf(stdout, "==lex success!==[");
-        dump_lex(stdout, lex_out);
+        dump_lex(stdout, &lex_out);
         fprintf(stdout, "]\n");
 
         FILE* file;
         if (verbose_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
         {
-            dump_lex(file, lex_out);
+            dump_lex(file, &lex_out);
             fclose(file);
         }
     }
@@ -904,7 +904,7 @@ int main(int argc, char** argv)
         assert(0 == system(temp));
         LexInput temp2;
         assert(read_file_into_lex_input(p.asm_path, &temp2));
-        fprintf(stdout, "%*s\n", int(temp2.length), temp2.stream);
+        fprintf(stdout, "%.*s\n", int(temp2.length), temp2.stream);
     }
     fclose(asm_test_file);
 

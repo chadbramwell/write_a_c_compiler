@@ -49,6 +49,8 @@ enum eToken : uint8_t
     keyword_do,
     keyword_break,
     keyword_continue,
+
+    comment,
 };
 
 struct Token
@@ -82,5 +84,5 @@ struct LexOutput
     LexOutput() : tokens_size(0), failure_location(NULL), failure_reason(NULL) {}
 };
 
-bool lex(const LexInput& input, LexOutput& output);
-void dump_lex(FILE* file, const LexOutput& lex);
+bool lex(const LexInput* input, LexOutput* output);
+void dump_lex(FILE* file, const LexOutput* lex);

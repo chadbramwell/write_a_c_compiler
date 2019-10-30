@@ -50,6 +50,63 @@ Token* push_id(LexOutput* out, const char* start, const char* end)
     token->identifier = strings_insert(start, end);
     return token;
 }
+void push_line_comment(LexOutput* out, const char** io_stream, const char* const end_stream)
+{
+    const char* stream = *io_stream;
+    const char* const token_start = stream;
+    stream += 2;
+
+    while (stream != end_stream && *stream != '\n')
+        ++stream;
+
+    if (stream != end_stream)
+        ++stream; // consume '\n'
+
+    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+    Token* token = &out->tokens[out->tokens_size++];
+    token->type = eToken::comment;
+    token->start = token_start;
+    token->end = stream;
+
+    printf("REMOVING COMMENT FROM TOKEN STREAM. TODO: Fixup AST to handle comments?\n");
+    --out->tokens_size;
+
+    *io_stream = stream;
+}
+bool push_multiline_comment(LexOutput* out, const char** io_stream, const char* const end_stream)
+{
+    const char* stream = *io_stream;
+    const char* const token_start = stream;
+    stream += 2;
+
+    bool found_end = false;
+    while (stream + 1 < end_stream)
+    {
+        if (stream[0] == '*' && stream[1] == '/')
+        {
+            found_end = true;
+            break;
+        }
+        ++stream;
+    }
+
+    if (!found_end)
+        return false;
+    
+    stream += 2; // skip past */
+
+    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+    Token* token = &out->tokens[out->tokens_size++];
+    token->type = eToken::comment;
+    token->start = token_start;
+    token->end = stream;
+
+    printf("REMOVING COMMENT FROM TOKEN STREAM. TODO: Fixup AST to handle comments?\n");
+    --out->tokens_size;
+
+    *io_stream = stream;
+    return true;
+}
 
 static str kStrVoid;
 static str kStrInt;
@@ -99,14 +156,14 @@ eToken try_resolve_keyword(str identifier)
     return eToken::identifier;
 }
 
-bool lex(const LexInput& input, LexOutput& output)
+bool lex(const LexInput* input, LexOutput* output)
 {
     init_str_keywords();
 
     // store length of output buffer and wipe it's length for return value
     // code below will write to and increment end_output
-    const char* stream = input.stream;
-    const char* end_stream = input.stream + input.length;
+    const char* stream = input->stream;
+    const char* end_stream = input->stream + input->length;
 
     while (stream < end_stream)
     {
@@ -122,39 +179,53 @@ bool lex(const LexInput& input, LexOutput& output)
         {
             if (stream[0] == '&' && stream[1] == '&')
             {
-                push_2c(&output, eToken::logical_and, stream);
+                push_2c(output, eToken::logical_and, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '|' && stream[1] == '|')
             {
-                push_2c(&output, eToken::logical_or, stream);
+                push_2c(output, eToken::logical_or, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '=' && stream[1] == '=')
             {
-                push_2c(&output, eToken::logical_equal, stream);
+                push_2c(output, eToken::logical_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '!' && stream[1] == '=')
             {
-                push_2c(&output, eToken::logical_not_equal, stream);
+                push_2c(output, eToken::logical_not_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '<' && stream[1] == '=')
             {
-                push_2c(&output, eToken::less_than_or_equal, stream);
+                push_2c(output, eToken::less_than_or_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '>' && stream[1] == '=')
             {
-                push_2c(&output, eToken::greater_than_or_equal, stream);
+                push_2c(output, eToken::greater_than_or_equal, stream);
                 stream += 2;
                 continue;
+            }
+            if (stream[0] == '/' && stream[1] == '/')
+            {
+                push_line_comment(output, &stream, end_stream);
+                continue;
+            }
+            if (stream[0] == '/' && stream[1] == '*')
+            {
+                if (push_multiline_comment(output, &stream, end_stream))
+                    continue;
+                output->failure_location = stream;
+                output->failure_reason = "[lex] failed to find end of multi-line comment";
+                debug_break();
+                return false;
             }
         }
 
@@ -162,83 +233,83 @@ bool lex(const LexInput& input, LexOutput& output)
         switch (*stream)
         {
         case '!':
-            push_1c(&output, eToken::logical_not, stream);
+            push_1c(output, eToken::logical_not, stream);
             ++stream;
             continue;
         case '%':
-            push_1c(&output, eToken::mod, stream);
+            push_1c(output, eToken::mod, stream);
             ++stream;
             continue;
         case '&':
-            push_1c(&output, eToken::bitwise_and, stream);
+            push_1c(output, eToken::bitwise_and, stream);
             ++stream;
             continue;
         case '(':
-            push_1c(&output, eToken::open_parens, stream);
+            push_1c(output, eToken::open_parens, stream);
             ++stream;
             continue;
         case ')':
-            push_1c(&output, eToken::closed_parens, stream);
+            push_1c(output, eToken::closed_parens, stream);
             ++stream;
             continue;
         case '*':
-            push_1c(&output, eToken::star, stream);
+            push_1c(output, eToken::star, stream);
             ++stream;
             continue;
         case '+':
-            push_1c(&output, eToken::plus, stream);
+            push_1c(output, eToken::plus, stream);
             ++stream;
             continue;
         case ',':
-            push_1c(&output, eToken::comma, stream);
+            push_1c(output, eToken::comma, stream);
             ++stream;
             continue;
         case '-':
-            push_1c(&output, eToken::dash, stream);
+            push_1c(output, eToken::dash, stream);
             ++stream;
             continue;
         case '/':
-            push_1c(&output, eToken::forward_slash, stream);
+            push_1c(output, eToken::forward_slash, stream);
             ++stream;
             continue;
         case ':':
-            push_1c(&output, eToken::colon, stream);
+            push_1c(output, eToken::colon, stream);
             ++stream;
             continue;
         case ';':
-            push_1c(&output, eToken::semicolon, stream);
+            push_1c(output, eToken::semicolon, stream);
             ++stream;
             continue;
         case '<':
-            push_1c(&output, eToken::less_than, stream);
+            push_1c(output, eToken::less_than, stream);
             ++stream;
             continue;
         case '=':
-            push_1c(&output, eToken::assignment, stream);
+            push_1c(output, eToken::assignment, stream);
             ++stream;
             continue;
         case '>':
-            push_1c(&output, eToken::greater_than, stream);
+            push_1c(output, eToken::greater_than, stream);
             ++stream;
             continue;
         case '?':
-            push_1c(&output, eToken::question_mark, stream);
+            push_1c(output, eToken::question_mark, stream);
             ++stream;
             continue;
         case '{':
-            push_1c(&output, eToken::open_curly, stream);
+            push_1c(output, eToken::open_curly, stream);
             ++stream;
             continue;
         case '|':
-            push_1c(&output, eToken::logical_or, stream);
+            push_1c(output, eToken::logical_or, stream);
             ++stream;
             continue;
         case '}':
-            push_1c(&output, eToken::closed_curly, stream);
+            push_1c(output, eToken::closed_curly, stream);
             ++stream;
             continue;
         case '~':
-            push_1c(&output, eToken::bitwise_not, stream);
+            push_1c(output, eToken::bitwise_not, stream);
             ++stream;
             continue;
         }
@@ -256,7 +327,7 @@ bool lex(const LexInput& input, LexOutput& output)
                 ++stream;
             }
 
-            push_num(&output, number, num_start, stream);
+            push_num(output, number, num_start, stream);
             continue;
         }
         
@@ -268,7 +339,7 @@ bool lex(const LexInput& input, LexOutput& output)
                 ++token_end;
             }
 
-            Token* token = push_id(&output, stream, token_end);
+            Token* token = push_id(output, stream, token_end);
             stream = token_end;
 
             token->type = try_resolve_keyword(token->identifier);
@@ -302,8 +373,8 @@ bool lex(const LexInput& input, LexOutput& output)
                     case 't': orvalue = 0x09; break; // horizontal tab
                     case 'v': orvalue = 0x0b; break; // vertical tab
                     default:
-                        output.failure_location = stream;
-                        output.failure_reason = "[lex] invalid or currently unhandled escape type in single quotes.";
+                        output->failure_location = stream;
+                        output->failure_reason = "[lex] invalid or currently unhandled escape type in single quotes.";
                         return false;
                     }
                 }
@@ -314,17 +385,17 @@ bool lex(const LexInput& input, LexOutput& output)
             }
             if (*stream != '\'')
             {
-                output.failure_location = stream;
-                output.failure_reason = "[lex] missing end of single quote. max length is 8 chars.";
+                output->failure_location = stream;
+                output->failure_reason = "[lex] missing end of single quote. max length is 8 chars.";
                 return false;
             }
             ++stream;
-            push_num(&output, value, token_start, stream);
+            push_num(output, value, token_start, stream);
             continue;
         }
 
-        output.failure_location = stream;
-        output.failure_reason = "[lex] unsupported data in input";
+        output->failure_location = stream;
+        output->failure_reason = "[lex] unsupported data in input";
         debug_break();
         return false;
     }
@@ -332,13 +403,12 @@ bool lex(const LexInput& input, LexOutput& output)
     return true;
 }
 
-void dump_lex(FILE* file, const LexOutput& lex)
+void dump_lex(FILE* file, const LexOutput* lex)
 {
-    for(const Token* iter = lex.tokens; 
-        iter != (lex.tokens + lex.tokens_size);
-        ++iter)
+    const Token* const token_end = lex->tokens + lex->tokens_size;
+    for(const Token* iter = lex->tokens; iter != token_end; ++iter)
     {
-        const Token& token = *iter;
+        const Token token = *iter;
         switch (token.type)
         {
         case eToken::identifier:
@@ -382,6 +452,7 @@ void dump_lex(FILE* file, const LexOutput& lex)
         case eToken::keyword_do: fprintf(file, "do"); continue;
         case eToken::keyword_break: fprintf(file, "break"); continue;
         case eToken::keyword_continue: fprintf(file, "continue"); continue;
+        case eToken::comment: fprintf(file, "%.*s", (token.end - token.start), token.start); continue;
         }
         
         debug_break();
