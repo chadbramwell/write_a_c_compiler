@@ -9,7 +9,7 @@ Stages to my compiler: *lex* -> *ast* -> *gen*
 Additional items written: *timer* (for perf timing), *debug* (for compile-time breakpoint & asserts), *dir* (for getting file names in a directory), *strings* (for compact storage of identifiers and pointer-comparison instead of full string-comparison), *interp* (an interpreter for my AST, to be used in real-time)
 
 
-C support:
+C support from following Nora's Compiler series:
 * generates x64 asm
 * types: int (8 bytes)
 * supported unary op: -
@@ -20,6 +20,24 @@ C support:
 * loops: for, while, do-while, break, continue, return
 * vars and scoping
 * functions (max 4 params)
+
+Additional C support (post-series):
+* 'A', 'ABCD', etc will resolve to a uint64_t
+* function return value of void
+* // and /**/ comments
+
+Missing C support:
+* types other than int
+* switch/case
+* structs
+* union
+* bitfields
+* pointers
+* enum
+* #define/#if
+* #include/#pragma once
+* typedef
+* ++, -=, +=
 
 Milestones:
 * "Hello, World!" - using putchar(int)
