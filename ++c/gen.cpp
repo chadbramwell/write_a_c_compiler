@@ -14,10 +14,7 @@ struct loop_label
 
 struct global_var
 {
-    const char* id; // str.nts
-    bool defined;
-    int64_t value;
-    char location[32]; // ex: my_var_name(%rip) MORE INFO: https://stackoverflow.com/questions/56262889/why-are-global-variables-in-x86-64-accessed-relative-to-the-instruction-pointer
+    ASTNode* node;
 };
 
 struct stack_var
@@ -52,13 +49,17 @@ struct gen_ctx
     int64_t num_loop_labels;
 };
 
-void declare_global_var(gen_ctx* ctx, const char* id)
+void declare_global_var(gen_ctx* ctx, ASTNode* node)
 {
+    assert(node->type == AST_var);
+    const char* id = node->var.name.nts;
+
     // find it first, if already declared than ignore
     for (int64_t i = 0; i < ctx->num_global_vars; ++i)
     {
-        if (ctx->global_vars[i].id == id)
+        if (ctx->global_vars[i].node->var.name.nts == id)
         {
+            printf("WARNING? DOUBLE VAR DECL\n");
             return;
         }
     }
@@ -71,26 +72,27 @@ void declare_global_var(gen_ctx* ctx, const char* id)
     }
 
     global_var* v = &ctx->global_vars[ctx->num_global_vars++];
-    v->id = id;
-    v->defined = false;
-    v->value = 0; // global vars default to zero even if they are never defined
+    v->node = node;
 }
 
-void define_global_var(gen_ctx* ctx, const char* id, int64_t value)
+void define_global_var(gen_ctx* ctx, ASTNode* node)
 {
+    assert(node->type == AST_var);
+    const char* id = node->var.name.nts;
+
     // try to find it, if it exists ensure this is the first time we are defining it
     for (int64_t i = 0; i < ctx->num_global_vars; ++i)
     {
-        global_var* v = &ctx->global_vars[i];
-        if (v->id != id) continue;
-        if (v->defined)
+        ASTNode* gv = ctx->global_vars[i].node;
+        if (gv->var.name.nts != id) continue;
+        if (gv->var.assign_expression != NULL)
         {
+            printf("ERROR? DOUBLE GLOBAL VAR DEFINITION\n");
             debug_break();
             return;
         }
 
-        v->defined = true;
-        v->value = value;
+        ctx->global_vars[i].node = node;
         return;
     }
 
@@ -102,9 +104,7 @@ void define_global_var(gen_ctx* ctx, const char* id, int64_t value)
     }
 
     global_var* v = &ctx->global_vars[ctx->num_global_vars++];
-    v->id = id;
-    v->defined = true;
-    v->value = value;
+    v->node = node;
 }
 
 stack_frame* push_stack_frame(gen_ctx* ctx)
@@ -260,14 +260,15 @@ bool pop_scope(gen_ctx* ctx, stack_frame* sf, ePopType pt)
     return true;
 }
 
-const char* get_var_location(gen_ctx* ctx, const ASTNode* n)
+bool emit_var_location(gen_ctx* ctx, const ASTNode* n)
 {
     stack_frame* frame = ctx->stack_frames + ctx->num_frames - 1;
     for (uint32_t i = 0; i < frame->num_vars; ++i)
     {
         if (frame->vars[i].id == n)
         {
-            return frame->vars[i].location;
+            fprintf(ctx->out, "%s", frame->vars[i].location);
+            return true;
         }
     }
 
@@ -275,36 +276,42 @@ const char* get_var_location(gen_ctx* ctx, const ASTNode* n)
     if (n->type != AST_var)
     {
         debug_break();
-        return NULL;
+        return false;
     }
+
     for (int64_t i = 0; i < ctx->num_global_vars; ++i)
     {
         global_var* v = &ctx->global_vars[i];
-        if (v->id == n->var.name.nts)
+        if (v->node->var.name.nts == n->var.name.nts)
         {
-            return v->location;
+            // my_var_name(%rip) MORE INFO: https://stackoverflow.com/questions/56262889/why-are-global-variables-in-x86-64-accessed-relative-to-the-instruction-pointer
+            fprintf(ctx->out, "%s(%%rip)", n->var.name.nts);
+            return true;
         }
     }
 
     debug_break();
-    return NULL;
+    return false;
 }
 
 bool copy_xxx_to_var(gen_ctx* ctx, const char* xxx, const ASTNode* n)
 {
-    const char* location = get_var_location(ctx, n);
-    if (!location) return false;
+    fprintf(ctx->out, "  mov %s, ", xxx);
 
-    fprintf(ctx->out, "  mov %s, %s\n", xxx, location);
+    if (!emit_var_location(ctx, n))
+        return false;
+
+    fprintf(ctx->out, "\n");
     return true;
 }
 
 bool copy_var_to_xxx(gen_ctx* ctx, const ASTNode* n, const char* xxx)
 {
-    const char* location = get_var_location(ctx, n);
-    if (!location) return false;
+    fprintf(ctx->out, "  mov ");
+    if (!emit_var_location(ctx, n))
+        return false;
 
-    fprintf(ctx->out, "  mov %s, %s\n", location, xxx);
+    fprintf(ctx->out, ", %s\n", xxx);
     return true;
 }
 
@@ -938,12 +945,11 @@ bool gen_asm(FILE* file, const AsmInput& input)
                     return false;
                 }
 
-                int64_t value = n->var.assign_expression->num.value;
-                define_global_var(ctx, n->var.name.nts, value);
+                define_global_var(ctx, n);
             }
             else
             {
-                declare_global_var(ctx, n->var.name.nts);
+                declare_global_var(ctx, n);
             }
         }
     }
@@ -953,14 +959,20 @@ bool gen_asm(FILE* file, const AsmInput& input)
     for (int64_t i = 0; i < ctx->num_global_vars; ++i)
     {
         global_var* gv = &ctx->global_vars[i];
-        fprintf(ctx->out, "  .global %s\n", gv->id);
+        const char* name = gv->node->var.name.nts;
+        ASTNode* assign_expression = gv->node->var.assign_expression;
+        if (assign_expression && assign_expression->type != AST_num)
+        {
+            debug_break();
+            free(ctx);
+            return false;
+        }
+        fprintf(ctx->out, "  .global %s\n", name);
         fprintf(ctx->out, "  .p2align 3\n");
-        if (gv->defined)
-            fprintf(ctx->out, "%s:\n  .long %" PRIi64 "\n", gv->id, gv->value);
+        if (assign_expression)
+            fprintf(ctx->out, "%s:\n  .long %" PRIi64 "\n", name, assign_expression->num.value);
         else
-            fprintf(ctx->out, "%s:\n  .zero 8\n", gv->id);
-
-        sprintf_s(gv->location, "%s(%%rip)", gv->id);
+            fprintf(ctx->out, "%s:\n  .zero 8\n", name);
     }
     if (ctx->num_global_vars > 0) fprintf(ctx->out, "  .text\n");
 

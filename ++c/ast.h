@@ -124,5 +124,4 @@ struct ASTOut
 
 bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out); // returns true on success
 void dump_ast(FILE* file, const ASTNode* root, int spaces_indent);
-void dump_ast_errors(FILE* file, const ASTOut* ast_out, const LexInput& lex);
-void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason);
+void dump_ast_errors(FILE* file, const ASTOut* ast_out, const LexInput* lex);

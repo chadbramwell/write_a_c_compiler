@@ -1745,91 +1745,24 @@ void append_error(ast_context* ctx, const Token* token, const char* reason)
     debug_break();
 }
 
-void draw_error_caret_at(FILE* out, const LexInput& lex, const char* error_location, const char* error_reason)
-{
-    const char* const file_start = lex.stream;
-    const char* const file_end = lex.stream + lex.length;
-
-    // line_num & line_start
-    uint64_t line_num = 0;
-    const char* line_start = file_start;
-    const char* line_end = file_end;
-    while (line_start < error_location)
-    {
-        ++line_num;
-        const char* new_line_start = line_start;
-        while (new_line_start < file_end && *new_line_start != '\n')
-            ++new_line_start;
-        if (new_line_start < file_end) // we must be at '\n', skip it
-            ++new_line_start;
-        if (new_line_start < error_location)
-        {
-            line_start = new_line_start;
-            continue;
-        }
-
-        line_end = new_line_start - 2;
-        break;
-    }
-
-    uint64_t char_num = uint64_t(error_location - line_start);
-
-    fprintf(out, "%s:%" PRIi64 ":%" PRIi64 ": error: %s\n",
-        lex.filename,
-        line_num,
-        char_num,
-        error_reason);
-    fprintf(out, "%.*s\n",
-        int(line_end - line_start),
-        line_start);
-
-    while (char_num)
-    {
-        fputc(' ', out);
-        --char_num;
-    }
-
-    fputc('^', out);
-    fputc('\n', out);
-}
-
-void dump_ast_errors(FILE* file, const ASTOut* ast, const LexInput& lex)
+void dump_ast_errors(FILE* file, const ASTOut* ast, const LexInput* lex)
 {
     fprintf(file, "\nBEGIN AST ctx=====\n");
     for (uint32_t i = 0; i < ast->num_errors; ++i)
     {
         const ASTError* error = ast->errors + i;
 
-        const char* const file_start = lex.stream;
-        const char* const file_end = lex.stream + lex.length;
-
         const char* error_location = error->token->start;
-
-        // line_num & line_start
-        uint64_t line_num = 0;
-        const char* line_start = file_start;
-        while (line_start < error_location)
-        {
-            ++line_num;
-            const char* line_iter = line_start;
-            while (line_iter < file_end && *line_iter != '\n')
-                ++line_iter;
-            if (line_iter >= error_location)
-                break;
-            line_start = line_iter + 1; // +1 to skip '\n'
-        }
-
-        // line_end
-        const char* line_end = line_start;
-        while (line_end < file_end && *line_end != '\n')
-            ++line_end;
-
-        uint64_t char_num = uint64_t(error_location - line_start);
+        const char* line_start;
+        const char* line_end;
+        uint64_t line_num;
+        get_debug_data_from_file_offset(lex, error_location, &line_start, &line_end, &line_num);
+        uint64_t line_offset = uint64_t(error_location - line_start);
 
         fprintf(file, "%s:%" PRIi64 ":%" PRIi64 ": error: %s\n",
-            lex.filename,
+            lex->filename,
             line_num,
-            char_num,
+            line_offset,
             error->reason);
         fprintf(file, "%.*s\n",
             int(line_end - line_start),
@@ -1855,10 +1788,10 @@ void dump_ast_errors(FILE* file, const ASTOut* ast, const LexInput& lex)
         }
         else
         {
-            while (char_num)
+            while (line_offset)
             {
                 fputc(' ', file);
-                --char_num;
+                --line_offset;
             }
         }
 

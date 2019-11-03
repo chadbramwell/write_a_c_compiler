@@ -72,7 +72,20 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * end of func (restore stack then restore rbp/rsp)
   * return early from func (same as above, perhaps jump to a cleanup section?)
 
+## Quick Reference: [C11's](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf) "Translation phases" (section 5.1.1.2)
+1. Trigraph sequences replaced.
+1. Every line ending with a backslash character (\\) should have the character and newline deleted. Thus a single-line comment or #define can stretch across multiple lines.
+1. Decompose into "preprocessing tokens."
+1. "Do all the preprocessing" - #if, #define & macro expansions, _Pragma, #include, etc.
+1. Handle stuff like \n in chars and strings.
+1. Adjacent string literal tokens are concatenated. Ex: printf("Hi" " Mom!"); will become printf("Hi Mom!");
+1. White-space doesn't matter anymore, remove it.
+1. Link.
 
+Well, wtf, what a trashfire. The most important step (4) where I would think the order of #if and such matters is just glazed over...
+
+## Known Bugs with my implementation:
+* int putchar(int); // compiler currently expects a variable name when parsing
 
 ## Timeline 
 **Note: 'day' in descriptions below is more like a few hours of work**
@@ -165,6 +178,8 @@ Reference: [Calling Convention](https://docs.microsoft.com/en-us/cpp/build/x64-c
   * (1 hour) Added support for single-quote values. They are interpreted as uint64_t. i.e. 'A' gives back a value of 65. Now we can "putchar('H');" instead of "putchar(72);" like we did in stage_9's hello_world.c. NOTE: I'm on my own here, no clue if this is correct behavior. I'm assuming I'll add proper error-checking if a user attempts to stuff values into non-int types (once we support them).
 * 10/29/2019
   * (1 hour) Adding support for // and /**/ comments. Currently I wipe them out of the token stream so AST doesn't have to skip over them. More ammo for my thinking that I need to produce an IR and do multiple passes on that IR instead of a single AST pass that tries to handle every case...
+* 11/2/2019
+  * (3 hours?) Read up on "Translation Phases" of a C Compiler. See [Section 5.1.1.2](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf). And handled backslash-newline. See this [awesome test case](stage_10+/5_backslash_newline.c). I'm not handling it in a "proper" way which would entail a full copy of the source file and cutting out bytes. Instead I'm just skipping over backslash-newline where needed. It works for now but I haven't researched/thought about the interaction with that and my next planned addition: #include.
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 

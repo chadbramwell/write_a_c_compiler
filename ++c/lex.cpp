@@ -56,11 +56,22 @@ void push_line_comment(LexOutput* out, const char** io_stream, const char* const
     const char* const token_start = stream;
     stream += 2;
 
-    while (stream != end_stream && *stream != '\n')
-        ++stream;
+    while (stream != end_stream)
+    {
+        while (stream != end_stream && *stream != '\n')
+            ++stream;
 
-    if (stream != end_stream)
-        ++stream; // consume '\n'
+        if (stream != end_stream)
+            ++stream; // consume '\n'
+
+        // backslash at end of line means we are still "logically" on the same line according to the standard
+        if (stream[-2] == '\\')
+            continue;
+        if (stream[-3] == '\\' && stream[-2] == '\r')
+            continue;
+
+        break;
+    }
 
     assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
     Token* token = &out->tokens[out->tokens_size++];
@@ -172,6 +183,24 @@ bool lex(const LexInput* input, LexOutput* output)
         {
             ++stream;
             continue;
+        }
+
+        // skip \newline (logically concatenates the line with the next line)
+        if (stream[0] == '\\')
+        {
+            if (stream + 1 == end_stream)
+            {
+                output->failure_location = stream;
+                output->failure_reason = "[lex] line concatenation with ending \\ is not allowed at end of file";
+                debug_break();
+                return false;
+            }
+
+            if (stream[1] == '\r' || stream[1] == '\n')
+            {
+                stream += 2;
+                continue;
+            }
         }
 
         // handle two-char syntax: &&, ||, ==, !=, <=, >=
@@ -333,14 +362,52 @@ bool lex(const LexInput* input, LexOutput* output)
         
         if(is_letter_or_underscore(*stream))
         {
-            const char* token_end = stream + 1;
-            while (token_end < end_stream && (is_letter_or_underscore(*token_end) || isnumber(*token_end)))
+            char id_temp[256];
+            char* id_end = id_temp;
+
+            *id_end++ = *stream++;
+            while (stream < end_stream)
             {
-                ++token_end;
+                if (is_letter_or_underscore(*stream) || isnumber(*stream))
+                {
+                    *id_end++ = *stream++;
+                    if (id_end == id_temp + 256)
+                    {
+                        output->failure_location = stream;
+                        output->failure_reason = "[lex] max identifier size set to 256, ran out of space.";
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (stream[0] == '\\'
+                    && stream + 3 < end_stream
+                    && stream[1] == '\r'
+                    && stream[2] == '\n')
+                {
+                    stream += 3;
+                    continue;
+                }
+
+                if (stream[0] == '\\'
+                    && stream + 1 < end_stream
+                    && stream[1] == '\n')
+                {
+                    stream += 2;
+                    continue;
+                }
+                    
+                if(stream[0] == '\\')
+                {
+                    output->failure_location = stream;
+                    output->failure_reason = "[lex] invalid character after \\, expected \\r and/or \\n";
+                    return false;
+                }
+
+                break;
             }
 
-            Token* token = push_id(output, stream, token_end);
-            stream = token_end;
+            Token* token = push_id(output, id_temp, id_end);
 
             token->type = try_resolve_keyword(token->identifier);
             continue;
@@ -458,4 +525,64 @@ void dump_lex(FILE* file, const LexOutput* lex)
         debug_break();
         break;// detected token we don't know how to handle
     }
+}
+
+void get_debug_data_from_file_offset(const LexInput* lex, const char* error_location, const char** o_line_start, const char** o_line_end, uint64_t* o_line_num)
+{
+    const char* const file_start = lex->stream;
+    const char* const file_end = lex->stream + lex->length;
+
+    // line_num & line_start
+    uint64_t line_num = 0;
+    const char* line_start = file_start;
+    const char* line_end = file_end;
+    while (line_start < error_location)
+    {
+        ++line_num;
+        const char* new_line_start = line_start;
+        while (new_line_start < file_end && *new_line_start != '\n')
+            ++new_line_start;
+        if (new_line_start < file_end) // we must be at '\n', skip it
+            ++new_line_start;
+        if (new_line_start < error_location)
+        {
+            line_start = new_line_start;
+            continue;
+        }
+
+        line_end = new_line_start - 2;
+        break;
+    }
+
+    *o_line_start = line_start;
+    *o_line_end = line_end;
+    *o_line_num = line_num;
+}
+
+void draw_error_caret_at(FILE* out, const LexInput* lex, const char* error_location, const char* error_reason)
+{
+    const char* line_start;
+    const char* line_end;
+    uint64_t line_num;
+    get_debug_data_from_file_offset(lex, error_location, &line_start, &line_end, &line_num);
+
+    uint64_t char_offset = uint64_t(error_location - line_start);
+    
+    fprintf(out, "%s:%" PRIu64 ":%" PRIu64 ": error: %s\n",
+        lex->filename,
+        line_num,
+        char_offset,
+        error_reason);
+    fprintf(out, "%.*s\n",
+        int(line_end - line_start),
+        line_start);
+
+    while (char_offset)
+    {
+        fputc(' ', out);
+        --char_offset;
+    }
+
+    fputc('^', out);
+    fputc('\n', out);
 }

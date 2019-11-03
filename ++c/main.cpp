@@ -285,7 +285,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         timer.start();
         if (!lex(&lexin, &lexout))
         {
-            draw_error_caret_at(stdout, lexin, lexout.failure_location, lexout.failure_reason);
+            draw_error_caret_at(stdout, &lexin, lexout.failure_location, lexout.failure_reason);
             success = false;
             ++test_fail;
             printf("failed to lex file %s\nComparing to Clang error:\n", file_path);
@@ -311,7 +311,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
             printf("failed to ast file %s\n", file_path);
             success = false;
             ++test_fail;
-            dump_ast_errors(stdout, &ast_out, lexin);
+            dump_ast_errors(stdout, &ast_out, &lexin);
             continue;
         }
         timer.end();
@@ -588,7 +588,7 @@ void interpreter_practice()
     if(!ast(lexout.tokens, lexout.tokens_size, &ast_out))
     {
         printf("AST FAILED!\n");
-        dump_ast_errors(stdout, &ast_out, lexin);
+        dump_ast_errors(stdout, &ast_out, &lexin);
         return;
     }
     else
@@ -843,7 +843,7 @@ int main(int argc, char** argv)
     ASTOut ast_out;
     if (!ast(lex_out.tokens, lex_out.tokens_size, &ast_out))
     {
-        dump_ast_errors(stdout, &ast_out, lex_in);
+        dump_ast_errors(stdout, &ast_out, &lex_in);
         main_timer.end();
         fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();
