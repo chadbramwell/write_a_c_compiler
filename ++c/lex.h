@@ -12,21 +12,26 @@ enum eToken : uint8_t
     constant_number = 2,
 
     logical_not     = '!',//ASCII 33
+    // " # $
     mod             = '%',//37
     bitwise_and     = '&',//38
+    // '
     open_parens     = '(',//40
     closed_parens   = ')',//41
     star            = '*',//42 - could be multiply, pointer decl, pointer deref
     plus            = '+',//43 - could be sign decl or binary add
     comma           = ',',//44
     dash            = '-',//45 - could be sign decl or binary sub
+    // .
     forward_slash   = '/',//47
+    // 0-9
     colon           = ':',//58
     semicolon       = ';',//59
     less_than       = '<',//60
     assignment      = '=',//61
     greater_than    = '>',//62
     question_mark   = '?',//63
+    // @ A-Z [ \ ] ^ _ ` a-z
     open_curly      = '{',//123
     bitwise_or      = '|',//124
     closed_curly    = '}',//125
@@ -51,6 +56,7 @@ enum eToken : uint8_t
     keyword_continue,
 
     comment,
+    //include_path,
 };
 
 struct Token
@@ -80,10 +86,9 @@ struct LexOutput
 
     const char* failure_location;
     const char* failure_reason;
-
-    LexOutput() : tokens_size(0), failure_location(NULL), failure_reason(NULL) {}
 };
 
+LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen);
 bool lex(const LexInput* input, LexOutput* output);
 void dump_lex(FILE* file, const LexOutput* lex);
 void get_debug_data_from_file_offset(const LexInput* lex, const char* error_location, const char** o_line_start, const char** o_line_end, uint64_t* o_line_num);

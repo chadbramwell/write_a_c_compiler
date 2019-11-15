@@ -1,5 +1,6 @@
 #include "gen.h"
 #include "debug.h"
+#include <stdlib.h>
 
 static const bool GENERATE_DEBUG_BREAK_AT_START_OF_MAIN = false;
 static const int MAX_FRAME_SIZE = 32;

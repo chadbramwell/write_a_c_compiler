@@ -1,6 +1,7 @@
 #include "ast.h"
 #include "lex.h"
 #include "debug.h"
+#include <stdlib.h>
 
 // STAGE 5 grammar from: https://norasandler.com/2018/01/08/Write-a-Compiler-5.html
 // Updates from other stages including: https://norasandler.com/2018/03/14/Write-a-Compiler-7.html

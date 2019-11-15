@@ -7,9 +7,8 @@
 #include "debug.h"
 #include "interp.h"
 
-#include "string.h"
-#include "stdio.h"
-#include "stdlib.h"
+#include <string>
+#include <vector>
 
 enum TestType : uint8_t
 {
@@ -22,16 +21,14 @@ enum TestType : uint8_t
     TEST_DUMP_ON            = 0b10000000,
 };
 
-bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
+const char* read_file_into_memory(const char* filename, size_t* o_size)
 {
-    lex_in->filename = filename;
-
     FILE* file;
-    if (0 != fopen_s(&file, lex_in->filename, "rb"))
+    if (0 != fopen_s(&file, filename, "rb"))
     {
-        printf("failed to open file %s\n", lex_in->filename);
+        printf("failed to open file %s\n", filename);
         debug_break();
-        return false;
+        return NULL;
     }
 
     fseek(file, 0, SEEK_END);
@@ -44,15 +41,21 @@ bool read_file_into_lex_input(const char* filename, LexInput* lex_in)
 
     if (file_size != actually_read)
     {
-        printf("failed to read file %s of size %" PRIu32 "\n", lex_in->filename, file_size);
+        printf("failed to read file %s of size %" PRIu32 "\n", filename, file_size);
         debug_break();
         free(memory);
-        return false;
+        return NULL;
     }
 
-    lex_in->stream = (const char*)memory;
-    lex_in->length = file_size;
-    return true;
+    *o_size = file_size;
+    return (const char*)memory;
+}
+void dump_file_to_stdout(const char* filename)
+{
+    size_t size;
+    const char* data = read_file_into_memory(filename, &size);
+    assert(data);
+    fwrite(data, 1, (size_t)size, stdout);
 }
 
 int get_clang_ground_truth(const char* source_path)
@@ -240,9 +243,7 @@ void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTN
             char temp_cmd[256];
             sprintf_s(temp_cmd, "clang -S %s -o%s", lexin.filename, temp_name);
             assert(0 == system(temp_cmd));
-            LexInput temp2;
-            assert(read_file_into_lex_input(temp_name, &temp2));
-            fprintf(stdout, "%.*s\n", int(temp2.length), temp2.stream);
+            dump_file_to_stdout(temp_name);
         }
         printf("=== END DEBUG INFO ===\n");
     }
@@ -267,11 +268,12 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         const char* file_path = dfpath(dir);
         printf("> %s\n", file_path);
 
-        ///// LEX
-        LexInput lexin;
+        ///// READ FILE
         Timer timer; 
         timer.start();
-        if (!read_file_into_lex_input(file_path, &lexin))
+        size_t file_length;
+        const char* file_data = read_file_into_memory(file_path, &file_length);
+        if (!file_data)
         {
             printf("failed to read file %s\n", file_path);
             success = false;
@@ -281,8 +283,10 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         timer.end();
         update_perf(&perf->read_file, timer.milliseconds());
 
-        LexOutput lexout;
+        ///// LEX
+        LexOutput lexout = {};
         timer.start();
+        LexInput lexin = init_lex(file_path, file_data, file_length);
         if (!lex(&lexin, &lexout))
         {
             draw_error_caret_at(stdout, &lexin, lexout.failure_location, lexout.failure_reason);
@@ -457,19 +461,19 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
 }
 
-void init_lex_to_ret2(LexInput& lex_in)
+void init_lex_to_ret2(LexInput& lexin)
 {
-    lex_in.filename = "ret2";
-    lex_in.stream =
+    const char* prog =
         "int main() {\n"
         "    return 2;\n"
         "}\n";
-    lex_in.length = strlen(lex_in.stream);
+
+    lexin = init_lex("ret2", prog, strlen(prog));
 }
 
 void test_simplify(const LexInput& lexin)
 {
-    LexOutput lexout;
+    LexOutput lexout = {};
     if (!lex(&lexin, &lexout))
         return;
 
@@ -502,39 +506,36 @@ void test_simplify(const LexInput& lexin)
 
 void test_simplify_double_negative()
 {
-    LexInput lexin;
-    lexin.filename = "ret--1";
-    lexin.stream =
+    const char* prog =
         "int main() {\n"
         "    return -(-1);\n"
         "}\n";
-    lexin.length = strlen(lexin.stream);
+
+    LexInput lexin = init_lex("ret--1", prog, strlen(prog));
 
     test_simplify(lexin);
 }
 
 void test_simplify_1_plus_2()
 {
-    LexInput lexin;
-    lexin.filename = "ret1+2";
-    lexin.stream =
+    const char* prog =
         "int main() {\n"
         "    return 1+2;\n"
         "}\n";
-    lexin.length = strlen(lexin.stream);
+
+    LexInput lexin = init_lex("ret1+2", prog, strlen(prog));
 
     test_simplify(lexin);
 }
 
 void test_simplify_dn_and_1p2()
 {
-    LexInput lexin;
-    lexin.filename = "ret--1+-2";
-    lexin.stream =
+    const char* prog =
         "int main() {\n"
         "    return -(-1+-2);\n"
         "}\n";
-    lexin.length = strlen(lexin.stream);
+
+    LexInput lexin = init_lex("ret--1+-2", prog, strlen(prog));
 
     test_simplify(lexin);
 }
@@ -564,12 +565,8 @@ void interpreter_practice()
     }
     printf("thanks! you wrote: ==========[%.*s]==========\n", (out - buffer), buffer);
 
-    LexInput lexin;
-    lexin.filename = "interp";
-    lexin.stream = buffer;
-    lexin.length = (out - buffer);
-
-    LexOutput lexout;
+    LexInput lexin = init_lex("interp", buffer, (out - buffer));
+    LexOutput lexout = {};
     if (!lex(&lexin, &lexout))
     {
         printf("LEX FAILED! %s\n", lexout.failure_reason);
@@ -773,14 +770,17 @@ int main(int argc, char** argv)
     Timer main_timer;
     main_timer.start();
 
-    LexInput lex_in;
+    LexInput lexin;
     if (argc >= 2)
     {
-        if (!read_file_into_lex_input(argv[1], &lex_in))
+        size_t file_length;
+        const char* file_data = read_file_into_memory(argv[1], &file_length);
+        if (!file_data)
         {
             // error reasons printed by function.
             return 2;
         }
+        lexin = init_lex(argv[1], file_data, file_length);
 
         if (argc == 3)
         {
@@ -795,15 +795,15 @@ int main(int argc, char** argv)
 
         if (verbose_print)
         {
-            fprintf(stdout, "===RAW FILE [%s]===\n", lex_in.filename);
-            fwrite(lex_in.stream, 1, (size_t)lex_in.length, stdout);
+            fprintf(stdout, "===RAW FILE [%s]===\n", lexin.filename);
+            fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
             fprintf(stdout, "\n===END RAW FILE===\n");
         }
     }
     else
     {
         printf("no path given so defaulting to simple return 2 program\n");
-        init_lex_to_ret2(lex_in);
+        init_lex_to_ret2(lexin);
     }
 
     FILE* timer_log;
@@ -814,13 +814,13 @@ int main(int argc, char** argv)
     }
 
     path p;
-    path_init(&p, lex_in.filename);
+    path_init(&p, lexin.filename);
     
-    LexOutput lex_out;
-    if (!lex(&lex_in, &lex_out))
+    LexOutput lexout = {};
+    if (!lex(&lexin, &lexout))
     {
-        fprintf(stdout, "lex failure: %s\n", lex_out.failure_reason);
-        dump_lex(stdout, &lex_out);
+        fprintf(stdout, "lex failure: %s\n", lexout.failure_reason);
+        dump_lex(stdout, &lexout);
         main_timer.end();
         fprintf(timer_log, "\n[%s] lex fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();
@@ -829,21 +829,21 @@ int main(int argc, char** argv)
     else if (verbose_print)
     {
         fprintf(stdout, "==lex success!==[");
-        dump_lex(stdout, &lex_out);
+        dump_lex(stdout, &lexout);
         fprintf(stdout, "]\n");
 
         FILE* file;
         if (verbose_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
         {
-            dump_lex(file, &lex_out);
+            dump_lex(file, &lexout);
             fclose(file);
         }
     }
 
     ASTOut ast_out;
-    if (!ast(lex_out.tokens, lex_out.tokens_size, &ast_out))
+    if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
     {
-        dump_ast_errors(stdout, &ast_out, &lex_in);
+        dump_ast_errors(stdout, &ast_out, &lexin);
         main_timer.end();
         fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();
@@ -902,9 +902,7 @@ int main(int argc, char** argv)
         char temp[260];
         sprintf_s(temp, "clang -S %s -o%s", p.original, p.asm_path);
         assert(0 == system(temp));
-        LexInput temp2;
-        assert(read_file_into_lex_input(p.asm_path, &temp2));
-        fprintf(stdout, "%.*s\n", int(temp2.length), temp2.stream);
+        dump_file_to_stdout(p.asm_path);
     }
     fclose(asm_test_file);
 
@@ -950,7 +948,7 @@ int main(int argc, char** argv)
         int our_result = system(p.exe_path);
         if (our_result != ground_truth)
         {
-            if(!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lex_in, lex_out, ast_out.root, &asm_in);
+            if(!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lexin, lexout, ast_out.root, &asm_in);
             printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
             debug_break();
         }

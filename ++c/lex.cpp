@@ -1,6 +1,66 @@
 #include "lex.h"
 #include "debug.h"
 #include "strings.h"
+#include <string.h>//memcmp
+#include <stdlib.h>//malloc
+
+//bool init_prelex(const LexInput* input, LexOutput* output)
+//{
+//    // Translation Phases 2 of section 5.1.1.2 http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf
+//    // NOTE: skipping Phase 1 which is trigraph replacement.
+//    // NOTE: Phase 2 is \newline concatenation. Meaning whenever we encounter backslash and then a newline character we should think of the line as being logically on the same line.
+//    //  Performing this step here simplifies the rest of the parsing portions of lex.
+//
+//    // NOTE: new stream size will be <= file size because we are simply removing backslash-newlines from the file.
+//    char* s = (char*)malloc((size_t)input->length);
+//    assert(s);
+//
+//    const char* f = input->stream;
+//    const char* const fend = f + input->length;
+//    while (f+3 < fend)
+//    {
+//        if (f[0] == '\\' && f[1] == '\r' && f[2] == '\n')
+//        {
+//            f += 3;
+//        }
+//        else if (f[0] == '\\' && f[1] == '\n')
+//        {
+//            f += 2;
+//        }
+//
+//        *s++ = *f++;
+//        continue;
+//    }
+//    switch (fend - f)
+//    {
+//    case 2: {
+//        if (f[0] == '\\' && f[1] == '\n')
+//        {
+//        }
+//        else if (f[1] == '\\')
+//        {
+//
+//        }
+//        else
+//        {
+//            s[0] = f[0];
+//            s[1] = f[1];
+//
+//        }
+//    } break;
+//    case 1: {
+//        if (f[0] == '\\')
+//        {
+//            // invalid according to standard.
+//        }
+//    }
+//    case 0: debug_break();
+//    default:
+//        debug_break();
+//    }
+//
+//    return r;
+//}
 
 bool is_letter_or_underscore(char c)
 {
@@ -40,6 +100,16 @@ void push_num(LexOutput* out, uint64_t n, const char* start, const char* end)
     token->end = end;
     token->number = n;
 }
+//void push_include(LexOutput* out, const char* start, const char* end, const char* path_start, const char* path_end)
+//{
+//    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
+//    Token* token = &out->tokens[out->tokens_size++];
+//    token->type = eToken::include_path;
+//    token->start = start;
+//    token->end = end;
+//    token->path.start = path_start;
+//    token->path.end = path_end;
+//}
 Token* push_id(LexOutput* out, const char* start, const char* end)
 {
     assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
@@ -166,6 +236,91 @@ eToken try_resolve_keyword(str identifier)
 
     return eToken::identifier;
 }
+//bool handle_directive(const char** io_stream, const char* const end_stream, LexOutput* output) // a directive is an instruction to the compiler to do something like #include or #pragma
+//{
+//    assert(**io_stream == '#');
+//    assert(*io_stream < end_stream);
+//    output;
+//
+//    const char* stream = *io_stream;
+//
+//    // LANGUAGE IMPROVEMENT: static_assert so we can ensure the sizes of our strings match the size passed into memcmp.
+//    // LANGUAGE IMPROVEMENT: allow 'blah' to any size as long as the size of the variable can hold it. This would allow a simple uint64_t test instead of memcmp.
+//
+//    // #include
+//    const char include[] = "#include";
+//    if (stream + 8 < end_stream && 0 == memcmp(stream, include, 8))
+//    {
+//        stream += 8;
+//        // skip whitespace
+//        while (stream < end_stream && iswhitespace(*stream))
+//            ++stream;
+//        // expect a string
+//        if (stream >= end_stream)
+//            goto ran_out_of_characters;
+//        if (*stream == '<')
+//        {
+//            ++stream;
+//            if (stream >= end_stream) goto ran_out_of_characters;
+//
+//            const char* path_start = stream;
+//            while (stream < end_stream && !iswhitespace(*stream))
+//                ++stream;
+//            if(stream >= end_stream) goto ran_out_of_characters;
+//            if (stream[-1] != '>')
+//            {
+//                output->failure_location = stream;
+//                output->failure_reason = "[lex] missing ending > for #include path";
+//                return false;
+//            }
+//
+//            push_include(output, *io_stream, stream, path_start, stream - 1);
+//            *io_stream = stream;
+//            return true;
+//        }
+//        else if (*stream == '"')
+//        {
+//            ++stream;
+//            if (stream >= end_stream) goto ran_out_of_characters;
+//
+//            const char* path_start = stream;
+//            while (stream < end_stream && !iswhitespace(*stream))
+//                ++stream;
+//            if (stream >= end_stream) goto ran_out_of_characters;
+//            if (stream[-1] != '"')
+//            {
+//                output->failure_location = stream;
+//                output->failure_reason = "[lex] missing ending \" for #include path";
+//                return false;
+//            }
+//
+//            push_include(output, *io_stream, stream, path_start, stream - 1);
+//            *io_stream = stream;
+//            return true;
+//        }
+//        else
+//        {
+//            output->failure_location = stream;
+//            output->failure_reason = "[lex] expected \" or < for #include path";
+//            return false;
+//        }
+//
+//    ran_out_of_characters:
+//        output->failure_location = stream;
+//        output->failure_reason = "[lex] ran out of characters parsing #include";
+//        return false;
+//    }
+//
+//    output->failure_location = stream;
+//    output->failure_reason = "[lex] hit a TODO, only #include is currently handled";
+//    debug_break(); // we don't handle other stuff yet...
+//    return false;
+//}
+
+LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen)
+{
+    return LexInput{ filename, filedata, filelen };
+}
 
 bool lex(const LexInput* input, LexOutput* output)
 {
@@ -265,6 +420,10 @@ bool lex(const LexInput* input, LexOutput* output)
             push_1c(output, eToken::logical_not, stream);
             ++stream;
             continue;
+        //case '#':
+        //    if (!handle_directive(&stream, end_stream, output))
+        //        return false;
+        //    continue;
         case '%':
             push_1c(output, eToken::mod, stream);
             ++stream;
@@ -520,6 +679,7 @@ void dump_lex(FILE* file, const LexOutput* lex)
         case eToken::keyword_break: fprintf(file, "break"); continue;
         case eToken::keyword_continue: fprintf(file, "continue"); continue;
         case eToken::comment: fprintf(file, "%.*s", (token.end - token.start), token.start); continue;
+        //case eToken::include_path: fprintf(file, "#include \"%.*s\"", (token.path.end - token.path.start), token.path.start); continue;
         }
         
         debug_break();
