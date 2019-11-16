@@ -34,6 +34,9 @@ C is a good starting point but it has ~200 undefined behaviors and ~150 implemen
 * Remove allowance of missing return (confusing)
 * Remove forward-decl requirement. (Broken, ex: can't forward-decl FILE)
 
+# intentionally not implemented
+* Trigraphs. They aren't enabled by default in MSVC, Clang, and GCC.
+
 # half-baked ideas
 * @ keywords that can be used to add new keywords and reduce conflicts with existing keywords. Ex: @pure
 * "pure" keyword that can be attached to functions. A pure function guarantees that it and none of the functions it calls touch any global state.
