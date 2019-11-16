@@ -62,8 +62,6 @@ enum eToken : uint8_t
 struct Token
 {
     eToken type;
-    const char* start; // simplest way to store this data, but assumes LexInput stream will last for as long as this is needed.
-    const char* end; // start and end is used for better compiler warnings/errors.
 
     union {
         str identifier; // only valid if type == eToken::identifier or one of the keywords
@@ -91,5 +89,3 @@ struct LexOutput
 LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen);
 bool lex(const LexInput* input, LexOutput* output);
 void dump_lex(FILE* file, const LexOutput* lex);
-void get_debug_data_from_file_offset(const LexInput* lex, const char* error_location, const char** o_line_start, const char** o_line_end, uint64_t* o_line_num);
-void draw_error_caret_at(FILE* out, const LexInput* lex, const char* error_location, const char* error_reason);

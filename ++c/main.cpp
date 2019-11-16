@@ -289,7 +289,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         LexInput lexin = init_lex(file_path, file_data, file_length);
         if (!lex(&lexin, &lexout))
         {
-            draw_error_caret_at(stdout, &lexin, lexout.failure_location, lexout.failure_reason);
+            debug_break();
             success = false;
             ++test_fail;
             printf("failed to lex file %s\nComparing to Clang error:\n", file_path);
@@ -315,7 +315,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
             printf("failed to ast file %s\n", file_path);
             success = false;
             ++test_fail;
-            dump_ast_errors(stdout, &ast_out, &lexin);
+            debug_break();
             continue;
         }
         timer.end();
@@ -585,7 +585,7 @@ void interpreter_practice()
     if(!ast(lexout.tokens, lexout.tokens_size, &ast_out))
     {
         printf("AST FAILED!\n");
-        dump_ast_errors(stdout, &ast_out, &lexin);
+        debug_break();
         return;
     }
     else
@@ -725,12 +725,12 @@ int main(int argc, char** argv)
             cleanup_artifacts(&perf.cleanup, "../stage_10/invalid/");
             if (test_single != 0) break; // quit if 0 or fall-through if not
         case 11:
-            Test(TEST_LEX, &perf, "../stage_10+/");
-            Test(TEST_LEX, &perf, "../stage_10+/invalid_lex/");
-            Test(TEST_INTERP, &perf, "../stage_10+/");
-            Test(TEST_GEN, &perf, "../stage_10+/");
-            cleanup_artifacts(&perf.cleanup, "../stage_10+/");
-            cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid_lex/");
+            //Test(TEST_LEX, &perf, "../stage_10+/");
+            //Test(TEST_LEX, &perf, "../stage_10+/invalid_lex/");
+            //Test(TEST_INTERP, &perf, "../stage_10+/");
+            //Test(TEST_GEN, &perf, "../stage_10+/");
+            //cleanup_artifacts(&perf.cleanup, "../stage_10+/");
+            //cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid_lex/");
             break; // quit, hit our last test.
         default:
             printf("Invalid Test #. Quitting.\n");
@@ -843,7 +843,6 @@ int main(int argc, char** argv)
     ASTOut ast_out;
     if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
     {
-        dump_ast_errors(stdout, &ast_out, &lexin);
         main_timer.end();
         fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
         debug_break();

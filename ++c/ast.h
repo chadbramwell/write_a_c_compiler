@@ -108,19 +108,11 @@ struct ASTNode
     }; // end union
 }; // end struct ASTNode
 
-struct ASTError
-{
-    const Token* token;
-    const char* reason;
-};
-
 struct ASTOut
 {
+    bool failure;
     ASTNode* root;
-    ASTError* errors;
-    uint64_t num_errors;
 };
 
 bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out); // returns true on success
 void dump_ast(FILE* file, const ASTNode* root, int spaces_indent);
-void dump_ast_errors(FILE* file, const ASTOut* ast_out, const LexInput* lex);

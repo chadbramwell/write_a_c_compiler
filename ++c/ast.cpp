@@ -46,9 +46,7 @@ struct TokenStream
 
 struct ast_context
 {
-    ASTError* errors;
-    uint32_t num_errors;
-
+    bool failure;
     eToken func_return_type; // used to verify return value of funcs
     ASTNodeArray var_decl_stack; // fixup references
 };
@@ -205,7 +203,8 @@ ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
         ASTNode* bi = parse_block_item(tokens, ctx);
         if (!bi)
         {
-            if (ctx->num_errors > 0)
+            //if (ctx->num_errors > 0)
+            if(ctx->failure)
                 return NULL;
             break;
         }
@@ -459,7 +458,8 @@ ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx)
             ASTNode* bi = parse_block_item(tokens, ctx);
             if (!bi)
             {
-                if (ctx->num_errors != 0)
+                //if (ctx->num_errors != 0)
+                if(ctx->failure)
                     return NULL;
                 break;
             }
@@ -1736,70 +1736,15 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, ast_context*
 
 void append_error(ast_context* ctx, const Token* token, const char* reason)
 {
-    ++ctx->num_errors;
-    ctx->errors = (ASTError*)realloc(ctx->errors, ctx->num_errors * sizeof(ASTError));
+    token; reason;
+    //++ctx->num_errors;
+    //ctx->errors = (ASTError*)realloc(ctx->errors, ctx->num_errors * sizeof(ASTError));
 
-    ASTError* e = ctx->errors + ctx->num_errors - 1;
-    e->token = token;
-    e->reason = reason;
+    //ASTError* e = ctx->errors + ctx->num_errors - 1;
+    //e->token = token;
+    //e->reason = reason;
 
-    debug_break();
-}
-
-void dump_ast_errors(FILE* file, const ASTOut* ast, const LexInput* lex)
-{
-    fprintf(file, "\nBEGIN AST ctx=====\n");
-    for (uint32_t i = 0; i < ast->num_errors; ++i)
-    {
-        const ASTError* error = ast->errors + i;
-
-        const char* error_location = error->token->start;
-        const char* line_start;
-        const char* line_end;
-        uint64_t line_num;
-        get_debug_data_from_file_offset(lex, error_location, &line_start, &line_end, &line_num);
-        uint64_t line_offset = uint64_t(error_location - line_start);
-
-        fprintf(file, "%s:%" PRIi64 ":%" PRIi64 ": error: %s\n",
-            lex->filename,
-            line_num,
-            line_offset,
-            error->reason);
-        fprintf(file, "%.*s\n",
-            int(line_end - line_start),
-            line_start);
-
-        // HACK - this is a dangerous way to get previous token.
-        const Token* prev_token = error->token - 1;
-        // END HACK
-        if (line_start < prev_token->end)
-        {
-            // generate squiggles from previous token to error.
-            const char* draw_cursor = line_start;
-            while (draw_cursor < prev_token->end)
-            {
-                fputc(' ', file);
-                ++draw_cursor;
-            }
-            while (draw_cursor < error_location)
-            {
-                fputc('~', file);
-                ++draw_cursor;
-            }
-        }
-        else
-        {
-            while (line_offset)
-            {
-                fputc(' ', file);
-                --line_offset;
-            }
-        }
-
-        fputc('^', file);
-        fputc('\n', file);
-    }
-    fprintf(file, "======END AST ctx\n");
+    ctx->failure = true;
     debug_break();
 }
 
@@ -1814,12 +1759,11 @@ bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out)
     ASTNode* root = parse_program(io_tokens, &ctx);
 
     out->root = root;
-    out->errors = ctx.errors;
-    out->num_errors = ctx.num_errors;
+    out->failure = ctx.failure;
 
     if (!root)
         return false;
-    if (ctx.num_errors > 0)
+    if (ctx.failure)
         return false;
 
     // fixup var references
@@ -1839,7 +1783,7 @@ bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out)
         debug_assert_vars_have_decls(root);
     }
 
-    if (ctx.num_errors > 0)
+    if (ctx.failure)
         return false;
 
     return true;
