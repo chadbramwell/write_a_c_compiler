@@ -554,7 +554,7 @@ void interpreter_practice()
     char* out = buffer;
     while (out < buffer_end)
     {
-        fgets(out, buffer_end - out, stdin);
+        fgets(out, (int)(buffer_end - out), stdin);
         char* found = strstr(out, end_string);
         if (found)
         {
@@ -563,7 +563,7 @@ void interpreter_practice()
         }
         out += strlen(out);
     }
-    printf("thanks! you wrote: ==========[%.*s]==========\n", (out - buffer), buffer);
+    printf("thanks! you wrote: ==========[%.*s]==========\n", (int)(out - buffer), buffer);
 
     LexInput lexin = init_lex("interp", buffer, (out - buffer));
     LexOutput lexout = {};
