@@ -1,4 +1,4 @@
-#include "ast.h"
+#include "ir.h"
 #include "lex.h"
 #include "debug.h"
 #include <stdlib.h>
@@ -44,15 +44,26 @@ struct TokenStream
     const Token* end;
 };
 
-struct ast_context
+struct ir_context
 {
-    bool failure;
+    const char* failure;
     eToken func_return_type; // used to verify return value of funcs
-    ASTNodeArray var_decl_stack; // fixup references
+    //ASTNodeArray var_decl_stack; // fixup references
+    IR* ir; // used realloc_ir
+    size_t irsz;
 };
 
-static ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx);
-static ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx);
+static size_t emplace_back_ir(ir_context* ctx)
+{
+    size_t offset = ctx->irsz;
+    ++ctx->irsz;
+    ctx->ir = (IR*)realloc(ctx->ir, ctx->irsz * sizeof(IR));
+    return offset;
+}
+
+static void parse_program(TokenStream* io_tokens, ir_context* ctx);
+static bool parse_function(TokenStream* io_tokens, ir_context* ctx);
+#if 0
 static ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx);
 static ASTNode* parse_block_item(TokenStream& io_tokens, ast_context* ctx);
 static ASTNode* parse_declaration(TokenStream& io_tokens, ast_context* ctx);
@@ -72,61 +83,57 @@ static ASTNode* parse_while_loop(TokenStream& io_tokens, ast_context* ctx);
 static ASTNode* parse_do_while_loop(TokenStream& io_tokens, ast_context* ctx);
 
 static bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, ast_context* ctx);
-static void append_error(ast_context* ctx, const Token* token, const char* reason);
+#endif
 
-ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx)
+static void append_error(ir_context* ctx, const char* reason);
+
+void parse_program(TokenStream* io_tokens, ir_context* ctx)
 {
     // <program> ::= { <function> | <declaration> }
-    if (io_tokens.next == io_tokens.end)
-    {
-        debug_break();
-        return NULL;
-    }
-    TokenStream tokens = io_tokens;
-
-    ASTNode n = {};
-    n.type = AST_program;
+    assert(io_tokens->next != io_tokens->end);
+    TokenStream tokens = *io_tokens;
 
     while (tokens.next != tokens.end)
     {
-        if (ASTNode* f = parse_function(tokens, ctx))
+        if (parse_function(&tokens, ctx))
         {
-            astn_push(&n.program, f);
             continue;
         }
-        if (ASTNode* d = parse_declaration_with_semicolon(tokens, ctx))
-        {
-            astn_push(&n.program, d);
-            continue;
-        }
+        //if (ASTNode* d = parse_declaration_with_semicolon(tokens, ctx))
+        //{
+        //    astn_push(&n.program, d);
+        //    continue;
+        //}
         break;
     }
 
     // success if we parsed all tokens
     if (tokens.next == tokens.end)
     {
-        io_tokens = tokens;
-        return new ASTNode(n);
+        *io_tokens = tokens;
     }
-
-    return NULL;
+    else
+    {
+        append_error(ctx, "failed to parse all tokens");
+    }
 }
 
-ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
+bool parse_function(TokenStream* io_tokens, ir_context* ctx)
 {
     // <function> :: = "int" <id> "("["int" <id> { "," "int" <id> }] ")" ("{" { <block - item> } "}" | ";")
-    assert(io_tokens.next != io_tokens.end);
-    TokenStream tokens = io_tokens;
+    assert(io_tokens->next != io_tokens->end);
+    TokenStream tokens = *io_tokens;
 
-    str func_name;
-    ASTNodeArray func_params = {};
+    size_t start_size = ctx->irsz;
+    size_t func_idx = emplace_back_ir(ctx);
+    ctx->ir[func_idx].t = IR_FUNC;
 
     // int or void
     eToken func_return_type = eToken::UNKNOWN;
     if (tokens.next->type != eToken::keyword_int && tokens.next->type != eToken::keyword_void)
     {
-        append_error(ctx, tokens.next, "expected int or void at start of function");
-        return NULL;
+        append_error(ctx, "expected int or void at start of function");
+        return false;
     }
     ctx->func_return_type = func_return_type = tokens.next->type;
     ++tokens.next;
@@ -224,6 +231,8 @@ ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx)
     n->fdef.body = func_body;
     return n;
 }
+
+#if 0
 
 ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx)
 {
@@ -1733,58 +1742,29 @@ bool expect_and_advance(TokenStream& tokens, eToken expected_token, ast_context*
     ++tokens.next;
     return true;
 }
+#endif
 
-void append_error(ast_context* ctx, const Token* token, const char* reason)
+void append_error(ir_context* ctx, const char* reason)
 {
-    token; reason;
-    //++ctx->num_errors;
-    //ctx->errors = (ASTError*)realloc(ctx->errors, ctx->num_errors * sizeof(ASTError));
-
-    //ASTError* e = ctx->errors + ctx->num_errors - 1;
-    //e->token = token;
-    //e->reason = reason;
-
-    ctx->failure = true;
+    ctx->failure = reason;
     debug_break();
 }
 
-bool ast(const Token* tokens, uint64_t num_tokens, ASTOut* out)
+bool ir(const Token* tokens, uint64_t num_tokens, IR** out, size_t* out_sz)
 {
     TokenStream io_tokens;
     io_tokens.next = tokens;
     io_tokens.end = tokens + num_tokens;
 
-    ast_context ctx = {};
+    ir_context ctx = {};
 
-    ASTNode* root = parse_program(io_tokens, &ctx);
-
-    out->root = root;
-    out->failure = ctx.failure;
-
-    if (!root)
-        return false;
-    if (ctx.failure)
-        return false;
-
-    // fixup var references
-    {
-        assert(root->type == AST_program);
-
-
-        for (uint32_t i = 0; i < root->program.size; ++i)
-        {
-            ASTNode* n = root->program.nodes[i];
-            //if (n->type == AST_fdef)
-            {
-                fixup_var_references(&ctx, n);
-            }
-        }
-
-        debug_assert_vars_have_decls(root);
-    }
+    parse_program(&io_tokens, &ctx);
 
     if (ctx.failure)
         return false;
+
+    *out = ctx.ir;
+    *out_sz = ctx.irsz;
 
     return true;
 }

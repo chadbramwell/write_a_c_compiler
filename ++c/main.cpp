@@ -4,9 +4,10 @@
 
 int main(int argc, char** argv)
 {
-    // if -test is specified, ignore rest of command-line
+    // handle global-opt-out flags
     for (int i = 1; i < argc; ++i)
     {
+        // if -test is specified, ignore rest of command-line
         if (0 == strcmp(argv[i], "-test"))
         {
             if (i + 1 < argc)
@@ -15,6 +16,11 @@ int main(int argc, char** argv)
                 return run_tests_on_folder(folder_index);
             }
             return run_all_tests();
+        }
+        // if -ir is specified, ignore rest of command-line
+        if (0 == strcmp(argv[i], "-ir"))
+        {
+            return run_ir_tests();
         }
     }
 
