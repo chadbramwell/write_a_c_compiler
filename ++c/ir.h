@@ -1,4 +1,5 @@
 #pragma once
+#include <inttypes.h>
 
 // After writing lex -> ast -> asm, I realized that the layout of function calls in for ast directly matches the data structure of the ast itself.
 // Which leads me to believe that the ast data structure isn't necessary at all. The structure of the function calls could remain to validate
@@ -10,14 +11,31 @@
 //   else, but if we are in the middle of function parsing and something else fails unexpectedly, like missing parens, then it becomes a "true"
 //   semantic error.
 
-enum IR_TYPE {
+enum eIR { // Intermediate Representation
     IR_UNKNOWN,
-    IR_FUNC,
+    IR_GLOBAL_FUNC,
+    IR_FUNC_END,
+    IR_RETURN_CONSTANT,
+};
+enum eVT { // Value Type
+    VT_NOT_VALUE_TYPE,
+    VT_INT,
+    VT_VOID,
 };
 
 struct IR
 {
-    IR_TYPE t;
+    eIR type;
+    union {
+        struct {
+            eVT return_type;
+            const char* name;
+            eVT* params;
+        } func;
+        struct {
+            uint64_t value;
+        } constant;
+    };
 };
 
-bool ir(const struct Token* tokens, size_t num_tokens, IR** out, size_t** out_sz);
+bool ir(const struct Token* tokens, size_t num_tokens, IR** out, size_t* out_size);

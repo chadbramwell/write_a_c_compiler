@@ -1,5 +1,6 @@
 #include "test.h"
 #include "lex.h"
+#include "ir.h"
 #include "ast.h"
 #include "gen.h"
 #include "simplify.h"
@@ -12,15 +13,17 @@
 #include <string>
 #include <vector>
 
-enum TestType2 : uint8_t
+struct test_config
 {
-    TEST_LEX = 0b00000001,
-    TEST_AST = 0b00000011,
-    TEST_GEN = 0b00000111,
-    TEST_SIMPLIFY = 0b00001011, //no GEN
-    TEST_INTERP = 0b00010011, //no GEN
+    bool lex;
+    bool ir;
+    bool ast;
+    bool gen;
 
-    TEST_DUMP_ON = 0b10000000,
+    bool simplify;
+    bool interp;
+
+    bool dump;
 };
 
 static const char* read_file_into_memory(const char* filename, size_t* o_size)
@@ -161,27 +164,28 @@ static void cleanup_artifacts(std::vector<float>* p, const char* path)
     update_perf(p, t.milliseconds());
 }
 
-static void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
+static void dump(test_config cfg, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
 {
-    if (tt & TEST_DUMP_ON)
+    if (cfg.dump)
     {
         printf("===DEBUG INFO FOR [%s]===\n", lexin.filename);
         printf("=== RAW FILE ===\n");
         fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
         printf("\n");
-        if ((tt & TEST_LEX) == TEST_LEX) {
+        if (cfg.lex) 
+        {
             printf("=== LEX ===\n");
             dump_lex(stdout, &lexout);
             printf("\n");
         }
-        if ((tt & TEST_AST) == TEST_AST)
+        if (cfg.ast)
         {
             printf("=== AST ===\n");
             dump_ast(stdout, root, 0);
             //dump_ast_errors(stdout, )
             printf("\n");
         }
-        if ((tt & TEST_GEN) == TEST_GEN)
+        if (cfg.gen)
         {
             printf("=== GEN ASSEMBLY ===\n");
             gen_asm(stdout, *asm_in);
@@ -201,7 +205,7 @@ static void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, con
     }
 }
 
-void Test(TestType2 tt, perf_numbers* perf, const char* path)
+void Test(test_config cfg, perf_numbers* perf, const char* path)
 {
     DirectoryIter* dir = NULL;
     if (!dopen(&dir, path, "*.c")) return;
@@ -253,10 +257,19 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
         timer.end();
         update_perf(&perf->lex, timer.milliseconds());
 
-        ////// AST
-        if ((tt & TEST_AST) != TEST_AST)
+        ////// IR
+        if (cfg.ir)
         {
-            dump(tt, lexin, lexout, NULL, NULL);
+            IR* irout = NULL;
+            size_t irout_size = 0;
+            bool ok = ir(lexout.tokens, lexout.tokens_size, &irout, &irout_size);
+            assert(ok);
+        }
+
+        ////// AST
+        if (!cfg.ast)
+        {
+            dump(cfg, lexin, lexout, NULL, NULL);
             continue;
         }
 
@@ -274,9 +287,9 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
         update_perf(&perf->ast, timer.milliseconds());
 
         // From here on, our tests diverge. If we only wanted to TEST_AST, exit now.
-        if ((tt ^ TEST_AST) == 0)
+        if (!cfg.gen && !cfg.interp && !cfg.simplify)
         {
-            dump(tt, lexin, lexout, ast_out.root, NULL);
+            dump(cfg, lexin, lexout, ast_out.root, NULL);
             continue;
         }
 
@@ -290,7 +303,7 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
         //printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
 
         ///// ASM
-        if ((tt & TEST_GEN) == TEST_GEN)
+        if (cfg.gen)
         {
             AsmInput asm_in;
             asm_in.root = ast_out.root;
@@ -353,25 +366,28 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
             timer.end();
             if (clang_ground_truth != our_result)
             {
-                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, &asm_in);
+                test_config temp_cfg = cfg;
+                temp_cfg.dump = 1;
+
+                dump(temp_cfg, lexin, lexout, ast_out.root, &asm_in);
                 printf("Ground Truth [%d] does not match our result [%d]\n", clang_ground_truth, our_result);
                 debug_break();
             }
             update_perf(&perf->run_exe, timer.milliseconds());
 
-            dump(tt, lexin, lexout, ast_out.root, &asm_in);
+            dump(cfg, lexin, lexout, ast_out.root, &asm_in);
             continue;
         }
 
         // SIMPLIFY
-        if ((tt & TEST_SIMPLIFY) == TEST_SIMPLIFY)
+        if (cfg.simplify)
         {
             debug_break();
             continue;
         }
 
         // INTERP
-        if ((tt & TEST_INTERP) == TEST_INTERP)
+        if (cfg.interp)
         {
             int64_t interp_result;
             timer.start();
@@ -386,9 +402,12 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
 
             if (interp_result != clang_ground_truth)
             {
+                test_config temp_cfg = cfg;
+                temp_cfg.dump = true;
+
                 printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 " vs Ground Truth: %d\n",
                     file_path, interp_result, clang_ground_truth);
-                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, NULL);
+                dump(temp_cfg, lexin, lexout, ast_out.root, NULL);
                 debug_break();
             }
             continue;
@@ -398,16 +417,16 @@ void Test(TestType2 tt, perf_numbers* perf, const char* path)
     dclose(&dir);
 
     // print results
-    switch (tt)
+    if(cfg.lex && cfg.ast && cfg.gen) printf("LEX, AST, and GEN/CLANG");
+    else if (cfg.lex && cfg.ast && cfg.interp) printf("INTERPRETER");
+    else if(cfg.lex && cfg.ast) printf("LEX, AST");
+    else if(cfg.lex) printf("LEX");
+    else
     {
-    case TEST_GEN: printf("LEX, AST, and GEN/CLANG"); break;
-    case TEST_AST: printf("LEX, AST"); break;
-    case TEST_LEX: printf("LEX"); break;
-    case TEST_INTERP: printf("INTERPRETER"); break;
-    default:
         debug_break();
         printf("???[%s]:", path);
     }
+
     success
         ? printf("[%s]:OK (%d tests)\n", path, test_count)
         : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
@@ -418,6 +437,20 @@ int run_ir_tests()
     int folder_index = 1;
 
     perf_numbers perf;
+
+    test_config TEST_LEX = {};
+    TEST_LEX.lex = true;
+
+    test_config TEST_GEN = {};
+    TEST_GEN.lex = true;
+    TEST_GEN.ir = true;
+    TEST_GEN.ast = true;
+    TEST_GEN.gen = true;
+
+    test_config TEST_INTERP = {};
+    TEST_INTERP.lex = true;
+    TEST_INTERP.ast = true;
+    TEST_INTERP.interp = true;
 
     Timer timer;
     timer.start();
