@@ -7,6 +7,7 @@
 #include "timer.h"
 #include "debug.h"
 #include "interp.h"
+#include "file.h"
 
 
 #include <string>
@@ -23,39 +24,10 @@ enum TestType : uint8_t
     TEST_DUMP_ON = 0b10000000,
 };
 
-const char* read_file_into_memory(const char* filename, size_t* o_size)
-{
-    FILE* file;
-    if (0 != fopen_s(&file, filename, "rb"))
-    {
-        printf("failed to open file %s\n", filename);
-        debug_break();
-        return NULL;
-    }
-
-    fseek(file, 0, SEEK_END);
-    uint32_t file_size = ftell(file);
-    rewind(file);
-
-    void* memory = malloc(file_size);
-    size_t actually_read = fread_s(memory, file_size, 1, file_size, file);
-    fclose(file);
-
-    if (file_size != actually_read)
-    {
-        printf("failed to read file %s of size %" PRIu32 "\n", filename, file_size);
-        debug_break();
-        free(memory);
-        return NULL;
-    }
-
-    *o_size = file_size;
-    return (const char*)memory;
-}
 void dump_file_to_stdout(const char* filename)
 {
     size_t size;
-    const char* data = read_file_into_memory(filename, &size);
+    const char* data = file_read_into_memory(filename, &size);
     assert(data);
     fwrite(data, 1, (size_t)size, stdout);
 }
@@ -274,7 +246,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         Timer timer;
         timer.start();
         size_t file_length;
-        const char* file_data = read_file_into_memory(file_path, &file_length);
+        const char* file_data = file_read_into_memory(file_path, &file_length);
         if (!file_data)
         {
             printf("failed to read file %s\n", file_path);
@@ -312,7 +284,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
 
         timer.start();
         ASTOut ast_out;
-        if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
+        if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
         {
             printf("failed to ast file %s\n", file_path);
             success = false;
@@ -480,7 +452,7 @@ void test_simplify(const LexInput& lexin)
         return;
 
     ASTOut ast_out;
-    if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
+    if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
         return;
 
     printf("=== Attempting Simplification of AST: ===\n");
@@ -584,7 +556,7 @@ void interpreter_practice()
     }
 
     ASTOut ast_out;
-    if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
+    if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
     {
         printf("AST FAILED!\n");
         debug_break();
@@ -735,17 +707,17 @@ int run_tests_on_folder(int folder_index)
 
     float tracked_total = 0.0f;
 
-    printf("Perf Results  [samples,      total,        avg,        low,       high]\n");
-    tracked_total += print_perf(&perf.read_file, "  read_file:  ", "\n");
-    tracked_total += print_perf(&perf.lex, "  lex:        ", "\n");
-    tracked_total += print_perf(&perf.ast, "  ast:        ", "\n");
-    tracked_total += print_perf(&perf.gen_asm, "  gen_asm:    ", "\n");
-    tracked_total += print_perf(&perf.gen_exe, "  gen_exe:    ", "\n");
-    tracked_total += print_perf(&perf.run_exe, "  run_exe:    ", "\n");
+    printf(                                         "Perf Results  [samples,      total,        avg,        low,       high]\n");
+    tracked_total += print_perf(&perf.read_file,    "  read_file:  ", "\n");
+    tracked_total += print_perf(&perf.lex,          "  lex:        ", "\n");
+    tracked_total += print_perf(&perf.ast,          "  ast:        ", "\n");
+    tracked_total += print_perf(&perf.gen_asm,      "  gen_asm:    ", "\n");
+    tracked_total += print_perf(&perf.gen_exe,      "  gen_exe:    ", "\n");
+    tracked_total += print_perf(&perf.run_exe,      "  run_exe:    ", "\n");
     tracked_total += print_perf(&perf.ground_truth, "  grnd_truth: ", "\n");
-    tracked_total += print_perf(&perf.interp, "  interp:     ", "\n");
-    tracked_total += print_perf(&perf.cleanup, "  cleanup:    ", "\n");
-    printf("Unaccounted for: %.2fms\n", (timer.milliseconds() - tracked_total));
+    tracked_total += print_perf(&perf.interp,       "  interp:     ", "\n");
+    tracked_total += print_perf(&perf.cleanup,      "  cleanup:    ", "\n");
+    printf(                                         "Unaccounted for: %.2fms\n", (timer.milliseconds() - tracked_total));
 
     test_simplify_double_negative();
     test_simplify_1_plus_2();
@@ -767,7 +739,7 @@ int run_specific_test(const char* path, bool verbose)
     if (path)
     {
         size_t file_length;
-        const char* file_data = read_file_into_memory(path, &file_length);
+        const char* file_data = file_read_into_memory(path, &file_length);
         if (!file_data)
         {
             // error reasons printed by function.
@@ -829,7 +801,7 @@ int run_specific_test(const char* path, bool verbose)
     }
 
     ASTOut ast_out;
-    if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
+    if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
     {
         main_timer.end();
         fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());

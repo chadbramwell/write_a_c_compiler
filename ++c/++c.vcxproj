@@ -117,6 +117,7 @@
   <ItemGroup>
     <ClCompile Include="ast_alloc.cpp" />
     <ClCompile Include="dir.cpp" />
+    <ClCompile Include="file.cpp" />
     <ClCompile Include="gen.cpp" />
     <ClCompile Include="ast.cpp" />
     <ClCompile Include="interp.cpp" />
@@ -131,6 +132,7 @@
     <ClInclude Include="ast_alloc.h" />
     <ClInclude Include="debug.h" />
     <ClInclude Include="dir.h" />
+    <ClInclude Include="file.h" />
     <ClInclude Include="gen.h" />
     <ClInclude Include="ast.h" />
     <ClInclude Include="interp.h" />

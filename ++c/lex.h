@@ -1,7 +1,7 @@
 #pragma once
 #include "strings.h"
-#include "inttypes.h"
-#include "stdio.h"
+#include <inttypes.h>
+#include <stdio.h>
 
 // Below is an attempt at a simple lexer. It's not meant to be optimal.
 
@@ -10,8 +10,10 @@ enum eToken : uint8_t
     UNKNOWN = 0,
     identifier = 1,
     constant_number = 2,
+    string = 3,
 
     logical_not     = '!',//ASCII 33
+    operators_start = logical_not,
     // " # $
     mod             = '%',//37
     bitwise_and     = '&',//38
@@ -43,8 +45,9 @@ enum eToken : uint8_t
     logical_not_equal,      // !=
     less_than_or_equal,     // <=
     greater_than_or_equal,  // >=
+    operators_end = greater_than_or_equal,
 
-    keyword_void,
+    keyword_void, keywords_first = keyword_void,
     keyword_int,
     keyword_return,
     keyword_if,
@@ -53,19 +56,27 @@ enum eToken : uint8_t
     keyword_while,
     keyword_do,
     keyword_break,
-    keyword_continue,
+    keyword_continue, keywords_last = keyword_continue,
 
     comment,
     //include_path,
 };
 
+struct str_slice
+{
+    const char* start;
+    const char* end;
+};
+
 struct Token
 {
     eToken type;
+    str_slice location;
 
     union {
         str identifier; // only valid if type == eToken::identifier or one of the keywords
         uint64_t number; // only valid if type == eToken::constant_number
+        str_slice str; // only valid if type == eToken::string
     };
 };
 
@@ -78,9 +89,11 @@ struct LexInput
 
 struct LexOutput
 {
-    static const uint8_t MAX_TOKENS = 255;
-    Token tokens[MAX_TOKENS];
-    uint8_t tokens_size;
+    Token* tokens;
+    uint64_t num_tokens;
+
+    char* strings;
+    char* strings_end;
 
     const char* failure_location;
     const char* failure_reason;
