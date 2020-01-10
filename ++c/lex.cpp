@@ -250,7 +250,6 @@ bool lex(const LexInput* input, LexOutput* output)
             {
                 output->failure_location = stream;
                 output->failure_reason = "[lex] line concatenation with ending \\ is not allowed at end of file";
-                debug_break();
                 return false;
             }
 
@@ -570,6 +569,24 @@ bool lex(const LexInput* input, LexOutput* output)
     return true;
 }
 
+void lex_strip_comments(const LexOutput* input, LexOutput* output)
+{
+    const Token* t = input->tokens;
+    const Token* end = t + input->num_tokens;
+    while (t != end && t->type == eToken::comment)
+        ++t;
+    while (t != end)
+    {
+        if (t->type == eToken::comment)
+        {
+            ++t;
+            continue;
+        }
+
+        *alloc_token(output) = *t++;
+    }
+}
+
 void dump_lex(FILE* file, const LexOutput* lex)
 {
     const Token* const token_end = lex->tokens + lex->num_tokens;
@@ -619,7 +636,7 @@ void dump_lex(FILE* file, const LexOutput* lex)
         case eToken::keyword_do: fprintf(file, "do"); continue;
         case eToken::keyword_break: fprintf(file, "break"); continue;
         case eToken::keyword_continue: fprintf(file, "continue"); continue;
-        case eToken::comment: fprintf(file, "// or /**/"); continue;
+        case eToken::comment: fprintf(file, "<comment>"); continue;
         //case eToken::include_path: fprintf(file, "#include \"%.*s\"", (token.path.end - token.path.start), token.path.start); continue;
         }
         

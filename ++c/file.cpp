@@ -4,6 +4,14 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
+void file_dump_to_stdout(const char* filename)
+{
+    size_t size;
+    const char* data = file_read_into_memory(filename, &size);
+    assert(data);
+    fwrite(data, 1, (size_t)size, stdout);
+}
+
 char* file_read_into_memory(const char* filename, size_t* o_size)
 {
     FILE* file;

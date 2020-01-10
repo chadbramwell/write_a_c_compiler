@@ -189,6 +189,7 @@ Well, wtf, what a trashfire. The most important step (4) where I would think the
   * 1 hour - cleaned up and merged code, re-ran tests.
   * Decided to finally move file stuff into it's own file.h/c.
   * You'll also note, error location is back. :D
+  * 2 hours - split up 10+ tests into more verbose-ly named folders. Added invalid_lex test. Added lex_strip_comments to remove comments from a token stream. Perf is crap (and when I say that I'm not happy that we are at 10+ms) but I think there's plenty of room for improvement (ex: pass flag to lex to ignore comments instead of stripping after).
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -303,6 +304,23 @@ Perf Results  [samples,      total,        avg,        low,       high]
   interp:     [    119,    12.12ms,     0.10ms,     0.00ms,     9.93ms]
   cleanup:    [     25,     2.22ms,     0.09ms,     0.05ms,     0.17ms]
 Unaccounted for: 595.89ms
+```
+Added # of tests, tests of invalid_lex, lex_strip to handle removing comments from token stream.
+```
+431 Tests took 66687.94ms
+Perf Results  [samples,      total,        avg,        low,       high]
+  read_file:  [    431,    45.23ms,     0.10ms,     0.06ms,     0.67ms]
+  invalid_lex:[      4,     0.05ms,     0.01ms,     0.01ms,     0.03ms]
+  lex:        [    427,     8.40ms,     0.02ms,     0.00ms,     0.52ms]
+  lex_strip:  [    427,     3.33ms,     0.01ms,     0.00ms,     0.22ms]
+  ast:        [    246,     4.61ms,     0.02ms,     0.01ms,     0.12ms]
+  gen_asm:    [    123,     8.60ms,     0.07ms,     0.03ms,     0.42ms]
+  gen_exe:    [    123, 14791.82ms,   120.26ms,   111.54ms,   137.32ms]
+  run_exe:    [    123,  5411.48ms,    44.00ms,    39.52ms,    85.65ms]
+  grnd_truth: [    246, 46001.11ms,   187.00ms,   170.41ms,   454.40ms]
+  interp:     [    123,    17.01ms,     0.14ms,     0.00ms,     7.06ms]
+  cleanup:    [     29,     3.01ms,     0.10ms,     0.05ms,     0.27ms]
+Unaccounted for: 393.27ms
 ```
 
 ## TODO (other than Stages)

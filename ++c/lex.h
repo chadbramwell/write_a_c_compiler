@@ -101,4 +101,5 @@ struct LexOutput
 
 LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen);
 bool lex(const LexInput* input, LexOutput* output);
+void lex_strip_comments(const LexOutput* input, LexOutput* output);
 void dump_lex(FILE* file, const LexOutput* lex);
