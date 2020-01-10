@@ -99,6 +99,7 @@ void path_init(path* p, const char* filename)
 
 struct perf_numbers
 {
+    uint64_t total_tests = 0;
     std::vector<float> read_file;
     std::vector<float> lex;
     std::vector<float> ast;
@@ -433,6 +434,8 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
     success
         ? printf("[%s]:OK (%d tests)\n", path, test_count)
         : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
+
+    perf->total_tests += test_count;
 }
 
 void init_lex_to_ret2(LexInput& lexin)
@@ -689,12 +692,31 @@ int run_tests_on_folder(int folder_index)
         cleanup_artifacts(&perf.cleanup, "../stage_10/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not
     case 11:
-        //Test(TEST_LEX, &perf, "../stage_10+/");
-        //Test(TEST_LEX, &perf, "../stage_10+/invalid_lex/");
+        Test(TEST_INTERP, &perf, "../stage_11_void/");
+        Test(TEST_GEN, &perf, "../stage_11_void/");
+        cleanup_artifacts(&perf.cleanup, "../stage_11_void/");
+        if (folder_index != 0) break; // quit if 0 or fall-through if not
+    case 12:
+        Test(TEST_LEX, &perf, "../stage_12_single_quotes/invalid_lex/");
+        Test(TEST_LEX, &perf, "../stage_12_single_quotes/");
+        Test(TEST_INTERP, &perf, "../stage_12_single_quotes/");
+        Test(TEST_GEN, &perf, "../stage_12_single_quotes/");
+        cleanup_artifacts(&perf.cleanup, "../stage_12_single_quotes/invalid_lex/");
+        cleanup_artifacts(&perf.cleanup, "../stage_12_single_quotes/");
+        if (folder_index != 0) break; // quit if 0 or fall-through if not
+    case 13:
+        Test(TEST_LEX, &perf, "../stage_13_comments_and_backslash/invalid_lex/");
+        Test(TEST_LEX, &perf, "../stage_13_comments_and_backslash/");
+        Test(TEST_INTERP, &perf, "../stage_13_comments_and_backslash/");
+        Test(TEST_GEN, &perf, "../stage_13_comments_and_backslash/");
+        cleanup_artifacts(&perf.cleanup, "../stage_13_comments_and_backslash/invalid_lex/");
+        cleanup_artifacts(&perf.cleanup, "../stage_13_comments_and_backslash/");
+        if (folder_index != 0) break; // quit if 0 or fall-through if not
+    case 14:
+        Test(TEST_LEX, &perf, "../stage_14_include/");
         //Test(TEST_INTERP, &perf, "../stage_10+/");
         //Test(TEST_GEN, &perf, "../stage_10+/");
-        //cleanup_artifacts(&perf.cleanup, "../stage_10+/");
-        //cleanup_artifacts(&perf.cleanup, "../stage_10+/invalid_lex/");
+        cleanup_artifacts(&perf.cleanup, "../stage_14_include+/");
         break; // quit, hit our last test.
     default:
         printf("Invalid Test #. Quitting.\n");
@@ -703,10 +725,9 @@ int run_tests_on_folder(int folder_index)
     }
 
     timer.end();
-    printf("Tests took %.2fms\n", timer.milliseconds());
+    printf("%" PRIu64 " Tests took %.2fms\n", perf.total_tests, timer.milliseconds());
 
     float tracked_total = 0.0f;
-
     printf(                                         "Perf Results  [samples,      total,        avg,        low,       high]\n");
     tracked_total += print_perf(&perf.read_file,    "  read_file:  ", "\n");
     tracked_total += print_perf(&perf.lex,          "  lex:        ", "\n");
@@ -718,6 +739,7 @@ int run_tests_on_folder(int folder_index)
     tracked_total += print_perf(&perf.interp,       "  interp:     ", "\n");
     tracked_total += print_perf(&perf.cleanup,      "  cleanup:    ", "\n");
     printf(                                         "Unaccounted for: %.2fms\n", (timer.milliseconds() - tracked_total));
+    getchar();
 
     test_simplify_double_negative();
     test_simplify_1_plus_2();
