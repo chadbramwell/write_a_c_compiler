@@ -184,6 +184,11 @@ Well, wtf, what a trashfire. The most important step (4) where I would think the
   * 1 hour - cleaned up some work I had done before with #include and committed it (commented out). For whatever reason, I'm a bit stuck. Not because I think I can't do the work or don't understand it but because I'm in analysis paralysis on how to handle #include. The biggest pushback from me "just doing it" is having to shift from a fairly simple transform of source->tokens to something more complex that has ramifications on the ability for "future programmers" to analyze their code. I know, I know, thinking about the "what-ifs" is an antithesis to speed and simplicity. Up until now, I could pinpoint issues in the source code because the tokens have pointers back into the original source file. This enabled the ability to determine line/character number for the issue as well as allow underlying the whole token (not just a single character). But moving forward, I'll need to perform passes upon the source code to produce a "correct" and compact token stream. Because of this multi-pass nature my tokens will lose the ability to point to original source location or would require annoying fixups. So I'm not sure if I should dive in an attempt to maintain correct locational information (annoying, slow, would need lots of testing, hopefully useful for future) or to move fast and KISS.
   * KISS - nuked all data allowing us to "easily" out error location.
   * Looks like I have some fun reading ahead: http://www.coding-guidelines.com/cbook/cbook1_1.pdf
+* 1/9/2020
+  * Spent 8? hours, across a few days, trying out rendering with Dear Imgui. Discovered some issues with my strings which is awesome! It's so beneficial to be able to actually render your text. Sadly most visual text editors work off of pattern matching which won't work (in the simple sense) with C/C++ due to backslash-newline.
+  * 1 hour - cleaned up and merged code, re-ran tests.
+  * Decided to finally move file stuff into it's own file.h/c.
+  * You'll also note, error location is back. :D
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 

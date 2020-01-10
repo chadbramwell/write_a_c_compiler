@@ -262,7 +262,7 @@ void Test(test_config cfg, perf_numbers* perf, const char* path)
         {
             IR* irout = NULL;
             size_t irout_size = 0;
-            bool ok = ir(lexout.tokens, lexout.tokens_size, &irout, &irout_size);
+            bool ok = ir(lexout.tokens, lexout.num_tokens, &irout, &irout_size);
             assert(ok);
         }
 
@@ -275,7 +275,7 @@ void Test(test_config cfg, perf_numbers* perf, const char* path)
 
         timer.start();
         ASTOut ast_out;
-        if (!ast(lexout.tokens, lexout.tokens_size, &ast_out))
+        if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
         {
             printf("failed to ast file %s\n", file_path);
             success = false;

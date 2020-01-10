@@ -4,114 +4,6 @@
 #include <string.h>//memcmp
 #include <stdlib.h>//malloc
 
-bool is_letter_or_underscore(char c)
-{
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
-bool isnumber(char c)
-{
-    return c >= '0' && c <= '9';
-}
-bool iswhitespace(char c)
-{
-    return (c >= '\t' && c <= '\r') || c == ' ';
-}
-
-void push_1c(LexOutput* out, eToken type)
-{
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = type;
-}
-void push_2c(LexOutput* out, eToken type)
-{
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = type;
-}
-void push_num(LexOutput* out, uint64_t n)
-{
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = eToken::constant_number;
-    token->number = n;
-}
-Token* push_id(LexOutput* out, const char* start, const char* end)
-{
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = eToken::identifier;
-    token->identifier = strings_insert(start, end);
-    return token;
-}
-void push_line_comment(LexOutput* out, char** io_stream, const char* const end_stream)
-{
-    char* stream = *io_stream;
-    stream += 2;
-
-    while (stream != end_stream)
-    {
-        while (stream != end_stream && *stream != '\n')
-            ++stream;
-
-        if (stream != end_stream)
-            ++stream; // consume '\n'
-
-        // backslash at end of line means we are still "logically" on the same line according to the standard
-        if (stream[-2] == '\\')
-            continue;
-        if (stream[-3] == '\\' && stream[-2] == '\r')
-            continue;
-
-        break;
-    }
-
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = eToken::comment;
-
-    printf("REMOVING COMMENT FROM TOKEN STREAM. TODO: Fixup AST to handle comments?\n");
-    --out->tokens_size;
-
-    *io_stream = stream;
-}
-bool push_multiline_comment(LexOutput* out, char** io_stream, const char* const end_stream)
-{
-    char* stream = *io_stream;
-    stream += 2;
-
-    bool found_end = false;
-    while (stream + 1 < end_stream)
-    {
-        if (stream[0] == '*' && stream[1] == '/')
-        {
-            found_end = true;
-            break;
-        }
-        ++stream;
-    }
-
-    if (!found_end)
-        return false;
-    
-    stream += 2; // skip past */
-
-    assert(out->tokens_size != LexOutput::MAX_TOKENS); // out of memory
-    Token* token = &out->tokens[out->tokens_size++];
-    token->type = eToken::comment;
-
-    printf("REMOVING COMMENT FROM TOKEN STREAM. TODO: Fixup AST to handle comments?\n");
-    --out->tokens_size;
-
-    *io_stream = stream;
-    return true;
-}
-bool handle_directive(char** io_stream, const char* end_stream, LexOutput* output)
-{
-    io_stream; end_stream; output;
-    return false;
-}
-
 static str kStrVoid;
 static str kStrInt;
 static str kStrReturn;
@@ -140,24 +32,185 @@ void init_str_keywords()
     kStrContinue = strings_insert_nts("continue");
 }
 
-eToken try_resolve_keyword(str identifier)
+bool is_letter_or_underscore(char c)
 {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+bool isnumber(char c)
+{
+    return c >= '0' && c <= '9';
+}
+bool iswhitespace(char c)
+{
+    return (c >= '\t' && c <= '\r') || c == ' ';
+}
+Token* alloc_token(LexOutput* out)
+{
+    out->tokens = (Token*)realloc(out->tokens, (out->num_tokens + 1) * sizeof(Token));
+    assert(out->tokens);
+    return &out->tokens[out->num_tokens++];
+}
+void push_1c(LexOutput* out, eToken type, const char* start)
+{
+    Token* token = alloc_token(out);
+    token->type = type;
+    token->location.start = start;
+    token->location.end = start + 1;
+}
+void push_2c(LexOutput* out, eToken type, const char* start)
+{
+    Token* token = alloc_token(out);
+    token->type = type;
+    token->location.start = start;
+    token->location.end = start + 2;
+}
+void push_num(LexOutput* out, uint64_t n, const char* start, const char* end)
+{
+    Token* token = alloc_token(out);
+    token->type = eToken::constant_number;
+    token->number = n;
+    token->location.start = start;
+    token->location.end = end;
+}
+void push_string(LexOutput* out, const char* start, const char* end)
+{
+    Token* token = alloc_token(out);
+    token->type = eToken::string;
+    token->location.start = start;
+    token->location.end = end;
+    token->str.start = start + 1; // skip starting "
+    token->str.end = end - 1; // set end at ending ", end should not be read only one before it
+}
+void push_id_or_keyword(LexOutput* out, str id, const char* start, const char* end)
+{
+    Token* token = alloc_token(out);
+    token->type = eToken::identifier;
+    token->location.start = start;
+    token->location.end = end;
+    token->identifier = id;
+
     // cool warning from MSVC from previous code:
     // for "io_token->type == eToken::keyword_int;" when I intended an assignment
     // 1>c:\users\chad\desktop\practice\write_a_c_compiler\++c\lex.cpp(58): warning C4553: '==': result of expression not used; did you intend '='?
 
-    if (identifier.nts == kStrVoid.nts) return eToken::keyword_void;
-    else if (identifier.nts == kStrInt.nts) return eToken::keyword_int;
-    else if (identifier.nts == kStrReturn.nts) return eToken::keyword_return;
-    else if (identifier.nts == kStrIf.nts) return eToken::keyword_if;
-    else if (identifier.nts == kStrElse.nts) return eToken::keyword_else;
-    else if (identifier.nts == kStrFor.nts) return eToken::keyword_for;
-    else if (identifier.nts == kStrWhile.nts) return eToken::keyword_while;
-    else if (identifier.nts == kStrDo.nts) return eToken::keyword_do;
-    else if (identifier.nts == kStrBreak.nts) return eToken::keyword_break;
-    else if (identifier.nts == kStrContinue.nts) return eToken::keyword_continue;
+    // Try to convert identifier to keyword. Keywords in C are reserved so we can do this at lex-time.
+    // TODO: verify this is still valid once we have implemented #define.
+    if (id.nts == kStrVoid.nts) token->type = eToken::keyword_void;
+    else if (id.nts == kStrInt.nts) token->type = eToken::keyword_int;
+    else if (id.nts == kStrReturn.nts) token->type = eToken::keyword_return;
+    else if (id.nts == kStrIf.nts) token->type = eToken::keyword_if;
+    else if (id.nts == kStrElse.nts) token->type = eToken::keyword_else;
+    else if (id.nts == kStrFor.nts) token->type = eToken::keyword_for;
+    else if (id.nts == kStrWhile.nts) token->type = eToken::keyword_while;
+    else if (id.nts == kStrDo.nts) token->type = eToken::keyword_do;
+    else if (id.nts == kStrBreak.nts) token->type = eToken::keyword_break;
+    else if (id.nts == kStrContinue.nts) token->type = eToken::keyword_continue;
+}
+uint64_t push_line_comment(LexOutput* out, const char* const io_stream, const char* const end_stream)
+{
+    const char* stream = io_stream;
+    stream += 2;
 
-    return eToken::identifier;
+    while (stream != end_stream)
+    {
+        while (stream != end_stream && *stream != '\n')
+            ++stream;
+
+        if (stream != end_stream)
+            ++stream; // consume '\n'
+
+        // backslash at end of line means we are still "logically" on the same line according to the standard
+        if (stream[-2] == '\\')
+            continue;
+        if (stream[-3] == '\\' && stream[-2] == '\r')
+            continue;
+
+        break;
+    }
+
+    Token* token = alloc_token(out);
+    token->type = eToken::comment;
+    token->location.start = io_stream;
+    token->location.end = stream;
+
+    return stream - io_stream;
+}
+uint64_t push_multiline_comment(LexOutput* out, const char* const io_stream, const char* const end_stream)
+{
+    const char* stream = io_stream;
+    stream += 2;
+
+    bool found_end = false;
+    while (stream + 1 < end_stream)
+    {
+        if (stream[0] == '*' && stream[1] == '/')
+        {
+            found_end = true;
+            break;
+        }
+        ++stream;
+    }
+
+    if (!found_end)
+        return 0;
+    
+    stream += 2; // skip past */
+
+    Token* token = alloc_token(out);
+    token->type = eToken::comment;
+    token->location.start = io_stream;
+    token->location.end = stream;
+
+    return stream - io_stream;
+}
+//uint64_t handle_directive(LexOutput* /*output*/, const char* const io_stream, const char* const end_stream)
+//{
+//    // HACK: this isn't correct.
+//    const char* stream = io_stream;
+//    while (*stream != '\n')
+//        ++stream;
+//    return stream - io_stream;
+//}
+str_slice convert_string(LexOutput* out, const char* start, const char* end)
+{
+    // space for string allocated in table out->all_strings
+    // does the work to handle backslash-newlines, \n, \t, etc.. in strings
+    if (end - start < 512)
+    {
+        debug_break();
+        return str_slice();
+    }
+    char temp[512];
+    char* write = temp;
+    const char* read = start;
+    while (read < end)
+    {
+        //if (*read != '\\')
+        {
+            *write++ = *read++;
+            continue;
+        }
+
+    }
+
+    if (read < end && *read == '\\')
+    {
+        debug_break();
+        return str_slice();
+    }
+
+    uint64_t entry_len = write - temp;
+    uint64_t table_len = out->strings_end - out->strings;
+    out->strings = (char*)realloc(out->strings, table_len + entry_len);
+
+    memcpy(out->strings_end, temp, entry_len);
+    out->strings_end = out->strings + table_len + entry_len; // NOTE: we re-offset from out->strings because realloc could change the base pointer
+
+    str_slice ret;
+    ret.start = out->strings + table_len;
+    ret.end = ret.start + entry_len;
+
+    return ret;
 }
 
 LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen)
@@ -167,15 +220,19 @@ LexInput init_lex(const char* filename, const char* filedata, uint64_t filelen)
 
 bool lex(const LexInput* input, LexOutput* output)
 {
+    assert(output->tokens == NULL); // caller must init to 0 LexOutput
     init_str_keywords();
 
+    const char* stream = input->stream;
+    const char* end_stream = stream + input->length;
+
     // FIRST PASS: Copy and perform early Translation Phase steps (5.1.1.2 of http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf).
-    char* stream = (char*)malloc((size_t)input->length);
-    char* end_stream = stream + input->length;
-    {
-        // TODO: pass
-        memcpy(stream, input->stream, (size_t)input->length);
-    }
+    //char* stream = (char*)malloc((size_t)input->length);
+    //char* end_stream = stream + input->length;
+    //{
+    //    // TODO: pass
+    //    memcpy(stream, input->stream, (size_t)input->length);
+    //}
 
     while (stream < end_stream)
     {
@@ -209,53 +266,57 @@ bool lex(const LexInput* input, LexOutput* output)
         {
             if (stream[0] == '&' && stream[1] == '&')
             {
-                push_2c(output, eToken::logical_and);
+                push_2c(output, eToken::logical_and, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '|' && stream[1] == '|')
             {
-                push_2c(output, eToken::logical_or);
+                push_2c(output, eToken::logical_or, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '=' && stream[1] == '=')
             {
-                push_2c(output, eToken::logical_equal);
+                push_2c(output, eToken::logical_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '!' && stream[1] == '=')
             {
-                push_2c(output, eToken::logical_not_equal);
+                push_2c(output, eToken::logical_not_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '<' && stream[1] == '=')
             {
-                push_2c(output, eToken::less_than_or_equal);
+                push_2c(output, eToken::less_than_or_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '>' && stream[1] == '=')
             {
-                push_2c(output, eToken::greater_than_or_equal);
+                push_2c(output, eToken::greater_than_or_equal, stream);
                 stream += 2;
                 continue;
             }
             if (stream[0] == '/' && stream[1] == '/')
             {
-                push_line_comment(output, &stream, end_stream);
+                stream += push_line_comment(output, stream, end_stream);
                 continue;
             }
             if (stream[0] == '/' && stream[1] == '*')
             {
-                if (push_multiline_comment(output, &stream, end_stream))
-                    continue;
-                output->failure_location = stream;
-                output->failure_reason = "[lex] failed to find end of multi-line comment";
-                debug_break();
-                return false;
+                uint64_t offset = push_multiline_comment(output, stream, end_stream);
+                if (offset == 0)
+                {
+                    output->failure_location = stream;
+                    output->failure_reason = "[lex] failed to find end of multi-line comment";
+                    debug_break();
+                    return false;
+                }
+                stream += offset;
+                continue;
             }
         }
 
@@ -263,96 +324,101 @@ bool lex(const LexInput* input, LexOutput* output)
         switch (*stream)
         {
         case '!':
-            push_1c(output, eToken::logical_not);
+            push_1c(output, eToken::logical_not, stream);
             ++stream;
             continue;
-        case '#':
-            if (!handle_directive(&stream, end_stream, output)) // unlike other calls here, this one actually moves stream
-            {
-                debug_break();
-                return false;
-            }
-            continue;
+        //case '#':
+        //{
+        //    uint64_t offset = handle_directive(output, stream, end_stream);
+        //    if (offset == 0)
+        //    {
+        //        debug_break();
+        //        return false;
+        //    }
+        //    stream += offset;
+        //    continue;
+        //}
         case '%':
-            push_1c(output, eToken::mod);
+            push_1c(output, eToken::mod, stream);
             ++stream;
             continue;
         case '&':
-            push_1c(output, eToken::bitwise_and);
+            push_1c(output, eToken::bitwise_and, stream);
             ++stream;
             continue;
         case '(':
-            push_1c(output, eToken::open_parens);
+            push_1c(output, eToken::open_parens, stream);
             ++stream;
             continue;
         case ')':
-            push_1c(output, eToken::closed_parens);
+            push_1c(output, eToken::closed_parens, stream);
             ++stream;
             continue;
         case '*':
-            push_1c(output, eToken::star);
+            push_1c(output, eToken::star, stream);
             ++stream;
             continue;
         case '+':
-            push_1c(output, eToken::plus);
+            push_1c(output, eToken::plus, stream);
             ++stream;
             continue;
         case ',':
-            push_1c(output, eToken::comma);
+            push_1c(output, eToken::comma, stream);
             ++stream;
             continue;
         case '-':
-            push_1c(output, eToken::dash);
+            push_1c(output, eToken::dash, stream);
             ++stream;
             continue;
         case '/':
-            push_1c(output, eToken::forward_slash);
+            push_1c(output, eToken::forward_slash, stream);
             ++stream;
             continue;
         case ':':
-            push_1c(output, eToken::colon);
+            push_1c(output, eToken::colon, stream);
             ++stream;
             continue;
         case ';':
-            push_1c(output, eToken::semicolon);
+            push_1c(output, eToken::semicolon, stream);
             ++stream;
             continue;
         case '<':
-            push_1c(output, eToken::less_than);
+            push_1c(output, eToken::less_than, stream);
             ++stream;
             continue;
         case '=':
-            push_1c(output, eToken::assignment);
+            push_1c(output, eToken::assignment, stream);
             ++stream;
             continue;
         case '>':
-            push_1c(output, eToken::greater_than);
+            push_1c(output, eToken::greater_than, stream);
             ++stream;
             continue;
         case '?':
-            push_1c(output, eToken::question_mark);
+            push_1c(output, eToken::question_mark, stream);
             ++stream;
             continue;
         case '{':
-            push_1c(output, eToken::open_curly);
+            push_1c(output, eToken::open_curly, stream);
             ++stream;
             continue;
         case '|':
-            push_1c(output, eToken::logical_or);
+            push_1c(output, eToken::logical_or, stream);
             ++stream;
             continue;
         case '}':
-            push_1c(output, eToken::closed_curly);
+            push_1c(output, eToken::closed_curly, stream);
             ++stream;
             continue;
         case '~':
-            push_1c(output, eToken::bitwise_not);
+            push_1c(output, eToken::bitwise_not, stream);
             ++stream;
             continue;
         }
 
         if (isnumber(*stream))
         {
+            const char* num_start = stream;
             uint64_t number = uint64_t(*stream - '0');
             ++stream;
 
@@ -363,22 +429,24 @@ bool lex(const LexInput* input, LexOutput* output)
                 ++stream;
             }
 
-            push_num(output, number);
+            push_num(output, number, num_start, stream);
             continue;
         }
         
         if(is_letter_or_underscore(*stream))
         {
+            const char* start = stream;
             char id_temp[256];
-            char* id_end = id_temp;
+            const char* const ID_MAX = id_temp + 256;
+            char* id_iter = id_temp;
 
-            *id_end++ = *stream++;
+            *id_iter++ = *stream++;
             while (stream < end_stream)
             {
                 if (is_letter_or_underscore(*stream) || isnumber(*stream))
                 {
-                    *id_end++ = *stream++;
-                    if (id_end == id_temp + 256)
+                    *id_iter++ = *stream++;
+                    if (id_iter == ID_MAX)
                     {
                         output->failure_location = stream;
                         output->failure_reason = "[lex] max identifier size set to 256, ran out of space.";
@@ -414,12 +482,12 @@ bool lex(const LexInput* input, LexOutput* output)
                 break;
             }
 
-            Token* token = push_id(output, id_temp, id_end);
-
-            token->type = try_resolve_keyword(token->identifier);
+            str id = strings_insert(id_temp, id_iter);
+            push_id_or_keyword(output, id, start, stream);
             continue;
         }
 
+        // single-quote strings
         if (*stream == '\'')
         {
             const char* token_start = stream++;
@@ -464,7 +532,32 @@ bool lex(const LexInput* input, LexOutput* output)
                 return false;
             }
             ++stream;
-            push_num(output, value);
+            push_num(output, value, token_start, stream);
+            continue;
+        }
+
+        // double-quote strings
+        if (*stream == '\"')
+        {
+            const char* string_start = stream++;
+            while (stream != end_stream && *stream != '\"')
+            {
+                // handle \"
+                if (*stream == '\\' && stream + 1 < end_stream && stream[1] == '\"')
+                {
+                    stream += 2;
+                    continue;
+                }
+                ++stream;
+            }
+            if (*stream != '\"')
+            {
+                output->failure_location = stream;
+                output->failure_reason = "[lex] missing end of string.";
+                return false;
+            }
+            ++stream;
+            push_string(output, string_start, stream);
             continue;
         }
 
@@ -479,7 +572,7 @@ bool lex(const LexInput* input, LexOutput* output)
 
 void dump_lex(FILE* file, const LexOutput* lex)
 {
-    const Token* const token_end = lex->tokens + lex->tokens_size;
+    const Token* const token_end = lex->tokens + lex->num_tokens;
     for(const Token* iter = lex->tokens; iter != token_end; ++iter)
     {
         const Token token = *iter;

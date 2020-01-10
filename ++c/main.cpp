@@ -1,6 +1,7 @@
 #include "test.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 int main(int argc, char** argv)
 {
@@ -17,10 +18,27 @@ int main(int argc, char** argv)
             }
             return run_all_tests();
         }
+
         // if -ir is specified, ignore rest of command-line
         if (0 == strcmp(argv[i], "-ir"))
         {
             return run_ir_tests();
+        }
+        
+        // if -interp is specified, ignore rest of command-line
+        if (0 == strcmp(argv[i], "-interp"))
+        {
+            while(true)
+            {
+                interpreter_practice();
+
+                printf("again?[y]:");
+                char temp[3];
+                fgets(temp, sizeof(temp), stdin);
+                if (temp[0] != 'y' || temp[1] != '\n')
+                    break;
+            }
+            return 0;
         }
     }
 

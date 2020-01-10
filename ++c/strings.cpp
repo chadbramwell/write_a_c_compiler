@@ -1,7 +1,7 @@
 #include "strings.h"
 #include "debug.h"
-#include "memory.h"
-#include <cinttypes>
+#include <memory.h>
+#include <inttypes.h>
 
 static char g_nts_strings[1024];
 static char* g_nts_strings_end = g_nts_strings;
