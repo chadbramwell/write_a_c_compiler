@@ -18,12 +18,6 @@ int main(int argc, char** argv)
             }
             return run_all_tests();
         }
-
-        // if -ir is specified, ignore rest of command-line
-        if (0 == strcmp(argv[i], "-ir"))
-        {
-            return run_ir_tests();
-        }
         
         // if -interp is specified, ignore rest of command-line
         if (0 == strcmp(argv[i], "-interp"))

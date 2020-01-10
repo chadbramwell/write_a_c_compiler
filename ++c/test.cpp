@@ -1,5 +1,6 @@
 #include "test.h"
 #include "lex.h"
+#include "ir.h"
 #include "ast.h"
 #include "gen.h"
 #include "simplify.h"
@@ -13,24 +14,18 @@
 #include <string>
 #include <vector>
 
-enum TestType : uint8_t
+struct test_config
 {
-    TEST_LEX = 0b00000001,
-    TEST_AST = 0b00000011,
-    TEST_GEN = 0b00000111,
-    TEST_SIMPLIFY = 0b00001011, //no GEN
-    TEST_INTERP = 0b00010011, //no GEN
+    bool lex;
+    bool ir;
+    bool ast;
+    bool gen;
 
-    TEST_DUMP_ON = 0b10000000,
+    bool simplify;
+    bool interp;
+
+    bool dump;
 };
-
-void dump_file_to_stdout(const char* filename)
-{
-    size_t size;
-    const char* data = file_read_into_memory(filename, &size);
-    assert(data);
-    fwrite(data, 1, (size_t)size, stdout);
-}
 
 static int get_clang_ground_truth(const char* source_path)
 {
@@ -45,56 +40,6 @@ static int get_clang_ground_truth(const char* source_path)
     assert(del_ok == 0);
 
     return ground_truth;
-}
-
-struct path
-{
-    const char* original;
-    const char* name_start;
-    const char* name_end;
-
-    char src_path[260];
-    char lex_path[260];
-    char ast_path[260];
-    char asm_path[260];
-    char exe_path[260];
-};
-
-static void path_init(path* p, const char* filename)
-{
-    memset(p, 0, sizeof(*p));
-    p->original = filename;
-
-    // find very end
-    const char* end = filename;
-    while (*end)
-        ++end;
-
-    // work backwards to find first extension 
-    p->name_end = end; // set now, '.' may not exist in filename
-    while (end > filename && *end != '.')
-        --end;
-    if (end != filename)
-        p->name_end = end;
-
-    // work backwards to find name start
-    p->name_start = filename;
-    while (end > filename && *end != '/' && *end != '\\')
-        --end;
-    if (end != filename)
-        p->name_start = end + 1;
-
-    int name_no_path_len = int(p->name_end - p->original);
-    if (!get_absolute_path(p->original, &p->src_path))
-        debug_break();
-    sprintf_s(p->lex_path, "%.*s.lex.txt", name_no_path_len, p->original);
-    sprintf_s(p->ast_path, "%.*s.ast.txt", name_no_path_len, p->original);
-    sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
-
-    char tmp[260];
-    sprintf_s(tmp, "%.*s.exe", name_no_path_len, p->original);
-    if (!get_absolute_path(tmp, &p->exe_path))
-        debug_break();
 }
 
 struct perf_numbers
@@ -183,27 +128,28 @@ static void cleanup_artifacts(std::vector<float>* p, const char* path)
     update_perf(p, t.milliseconds());
 }
 
-static void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
+static void dump(test_config cfg, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
 {
-    if (tt & TEST_DUMP_ON)
+    if (cfg.dump)
     {
         printf("===DEBUG INFO FOR [%s]===\n", lexin.filename);
         printf("=== RAW FILE ===\n");
         fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
         printf("\n");
-        if ((tt & TEST_LEX) == TEST_LEX) {
+        if (cfg.lex) 
+        {
             printf("=== LEX ===\n");
             dump_lex(stdout, &lexout);
             printf("\n");
         }
-        if ((tt & TEST_AST) == TEST_AST)
+        if (cfg.ast)
         {
             printf("=== AST ===\n");
             dump_ast(stdout, root, 0);
             //dump_ast_errors(stdout, )
             printf("\n");
         }
-        if ((tt & TEST_GEN) == TEST_GEN)
+        if (cfg.gen)
         {
             printf("=== GEN ASSEMBLY ===\n");
             gen_asm(stdout, *asm_in);
@@ -217,13 +163,13 @@ static void dump(uint8_t tt, const LexInput& lexin, const LexOutput& lexout, con
             char temp_cmd[256];
             sprintf_s(temp_cmd, "clang -S %s -o%s", lexin.filename, temp_name);
             assert(0 == system(temp_cmd));
-            dump_file_to_stdout(temp_name);
+            file_dump_to_stdout(temp_name);
         }
         printf("=== END DEBUG INFO ===\n");
     }
 }
 
-void Test(TestType tt, perf_numbers* perf, const char* path)
+static void Test(test_config cfg, perf_numbers* perf, const char* path)
 {
     DirectoryIter* dir = NULL;
     if (!dopen(&dir, path, "*.c")) return;
@@ -275,10 +221,19 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         timer.end();
         update_perf(&perf->lex, timer.milliseconds());
 
-        ////// AST
-        if ((tt & TEST_AST) != TEST_AST)
+        ////// IR
+        if (cfg.ir)
         {
-            dump(tt, lexin, lexout, NULL, NULL);
+            IR* irout = NULL;
+            size_t irout_size = 0;
+            bool ok = ir(lexout.tokens, lexout.num_tokens, &irout, &irout_size);
+            assert(ok);
+        }
+
+        ////// AST
+        if (!cfg.ast)
+        {
+            dump(cfg, lexin, lexout, NULL, NULL);
             continue;
         }
 
@@ -296,9 +251,9 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         update_perf(&perf->ast, timer.milliseconds());
 
         // From here on, our tests diverge. If we only wanted to TEST_AST, exit now.
-        if ((tt ^ TEST_AST) == 0)
+        if (!cfg.gen && !cfg.interp && !cfg.simplify)
         {
-            dump(tt, lexin, lexout, ast_out.root, NULL);
+            dump(cfg, lexin, lexout, ast_out.root, NULL);
             continue;
         }
 
@@ -312,7 +267,7 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
         //printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
 
         ///// ASM
-        if ((tt & TEST_GEN) == TEST_GEN)
+        if (cfg.gen)
         {
             AsmInput asm_in;
             asm_in.root = ast_out.root;
@@ -375,25 +330,28 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
             timer.end();
             if (clang_ground_truth != our_result)
             {
-                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, &asm_in);
+                test_config temp_cfg = cfg;
+                temp_cfg.dump = true;
+
+                dump(temp_cfg, lexin, lexout, ast_out.root, &asm_in);
                 printf("Ground Truth [%d] does not match our result [%d]\n", clang_ground_truth, our_result);
                 debug_break();
             }
             update_perf(&perf->run_exe, timer.milliseconds());
 
-            dump(tt, lexin, lexout, ast_out.root, &asm_in);
+            dump(cfg, lexin, lexout, ast_out.root, &asm_in);
             continue;
         }
 
         // SIMPLIFY
-        if ((tt & TEST_SIMPLIFY) == TEST_SIMPLIFY)
+        if (cfg.simplify)
         {
             debug_break();
             continue;
         }
 
         // INTERP
-        if ((tt & TEST_INTERP) == TEST_INTERP)
+        if (cfg.interp)
         {
             int64_t interp_result;
             timer.start();
@@ -408,9 +366,12 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
 
             if (interp_result != clang_ground_truth)
             {
+                test_config temp_cfg = cfg;
+                temp_cfg.dump = true;
+
                 printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 " vs Ground Truth: %d\n",
                     file_path, interp_result, clang_ground_truth);
-                dump(tt | TEST_DUMP_ON, lexin, lexout, ast_out.root, NULL);
+                dump(temp_cfg, lexin, lexout, ast_out.root, NULL);
                 debug_break();
             }
             continue;
@@ -420,16 +381,29 @@ void Test(TestType tt, perf_numbers* perf, const char* path)
     dclose(&dir);
 
     // print results
-    switch (tt)
-    {
-    case TEST_GEN: printf("LEX, AST, and GEN/CLANG"); break;
-    case TEST_AST: printf("LEX, AST"); break;
-    case TEST_LEX: printf("LEX"); break;
-    case TEST_INTERP: printf("INTERPRETER"); break;
-    default:
-        debug_break();
-        printf("???[%s]:", path);
+    bool prior = false;
+    if (cfg.lex) {
+        printf("LEX"); 
+        prior = true;
     }
+    if (cfg.ast) {
+        printf("%sAST", prior ? ", " : ""); 
+        prior = true;
+    }
+    if (cfg.ir) {
+        printf("%sIR", prior ? ", " : "");
+        prior = true;
+    }
+    if (cfg.interp) {
+        printf("%sINTERPRETER", prior ? ", " : "");
+        prior = true;
+    }
+    if (cfg.gen) {
+        printf("%sGEN(ASM)", prior ? ", " : "");
+        prior = true;
+    }
+    if (!prior) debug_break(); // missing a check for a cfg flag.
+
     success
         ? printf("[%s]:OK (%d tests)\n", path, test_count)
         : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
@@ -587,6 +561,23 @@ int run_tests_on_folder(int folder_index)
 {
     perf_numbers perf;
 
+    test_config TEST_LEX = {};
+    TEST_LEX.lex = true;
+
+    test_config TEST_GEN = {};
+    TEST_GEN.lex = true;
+    TEST_GEN.ast = true;
+    TEST_GEN.gen = true;
+
+    test_config TEST_INTERP = {};
+    TEST_INTERP.lex = true;
+    TEST_INTERP.ast = true;
+    TEST_INTERP.interp = true;
+
+    test_config TEST_IR = {};
+    TEST_IR.lex = true;
+    TEST_IR.ir = true;
+
     Timer timer;
     timer.start();
 
@@ -597,6 +588,7 @@ int run_tests_on_folder(int folder_index)
     case 1:
         Test(TEST_LEX, &perf, "../stage_1/valid/");
         Test(TEST_LEX, &perf, "../stage_1/invalid/");
+        Test(TEST_IR, &perf, "../stage_1/valid/");
         Test(TEST_INTERP, &perf, "../stage_1/valid/");
         Test(TEST_GEN, &perf, "../stage_1/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_1/valid/");
@@ -724,6 +716,56 @@ int run_tests_on_folder(int folder_index)
     test_simplify_dn_and_1p2();
 
     return 0;
+}
+
+struct path
+{
+    const char* original;
+    const char* name_start;
+    const char* name_end;
+
+    char src_path[260];
+    char lex_path[260];
+    char ast_path[260];
+    char asm_path[260];
+    char exe_path[260];
+};
+
+static void path_init(path* p, const char* filename)
+{
+    memset(p, 0, sizeof(*p));
+    p->original = filename;
+
+    // find very end
+    const char* end = filename;
+    while (*end)
+        ++end;
+
+    // work backwards to find first extension 
+    p->name_end = end; // set now, '.' may not exist in filename
+    while (end > filename && *end != '.')
+        --end;
+    if (end != filename)
+        p->name_end = end;
+
+    // work backwards to find name start
+    p->name_start = filename;
+    while (end > filename && *end != '/' && *end != '\\')
+        --end;
+    if (end != filename)
+        p->name_start = end + 1;
+
+    int name_no_path_len = int(p->name_end - p->original);
+    if (!get_absolute_path(p->original, &p->src_path))
+        debug_break();
+    sprintf_s(p->lex_path, "%.*s.lex.txt", name_no_path_len, p->original);
+    sprintf_s(p->ast_path, "%.*s.ast.txt", name_no_path_len, p->original);
+    sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
+
+    char tmp[260];
+    sprintf_s(tmp, "%.*s.exe", name_no_path_len, p->original);
+    if (!get_absolute_path(tmp, &p->exe_path))
+        debug_break();
 }
 
 int run_specific_test(const char* path, bool verbose)
@@ -861,7 +903,7 @@ int run_specific_test(const char* path, bool verbose)
         char temp[260];
         sprintf_s(temp, "clang -S %s -o%s", p.original, p.asm_path);
         assert(0 == system(temp));
-        dump_file_to_stdout(p.asm_path);
+        file_dump_to_stdout(p.asm_path);
     }
     fclose(asm_test_file);
 
@@ -907,7 +949,14 @@ int run_specific_test(const char* path, bool verbose)
         int our_result = system(p.exe_path);
         if (our_result != ground_truth)
         {
-            if (!verbose_print) dump(TEST_GEN | TEST_DUMP_ON, lexin, lexout, ast_out.root, &asm_in);
+            test_config test_cfg = {};
+            test_cfg.lex = true;
+            test_cfg.ir = true;
+            test_cfg.ast = true;
+            test_cfg.gen = true;
+            test_cfg.dump = true;
+
+            if (!verbose_print) dump(test_cfg, lexin, lexout, ast_out.root, &asm_in);
             printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
             debug_break();
         }

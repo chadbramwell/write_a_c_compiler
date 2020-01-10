@@ -127,7 +127,6 @@
     <ClCompile Include="simplify.cpp" />
     <ClCompile Include="strings.cpp" />
     <ClCompile Include="test.cpp" />
-    <ClCompile Include="test_ir.cpp" />
     <ClCompile Include="timer.cpp" />
   </ItemGroup>
   <ItemGroup>
