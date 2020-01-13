@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "interp.h"
 #include "file.h"
+#include "test_cache.h"
 
 
 #include <string>
@@ -29,15 +30,23 @@ struct test_config
 
 static int get_clang_ground_truth(const char* source_path)
 {
-    char buff[256];
-    sprintf_s(buff, "clang %s", source_path);
-    int compilation_result = system(buff);
-    assert(compilation_result == 0);
+    uint32_t path_hash = test_cache_path_hash(source_path);
 
-    int ground_truth = system("a.exe");
+    int32_t ground_truth;
+    if (!get_cached_test_result(path_hash, &ground_truth))
+    {
+        char buff[256];
+        sprintf_s(buff, "clang %s", source_path);
+        int compilation_result = system(buff);
+        assert(compilation_result == 0);
 
-    int del_ok = system("del a.exe");
-    assert(del_ok == 0);
+        ground_truth = system("a.exe");
+
+        int del_ok = system("del a.exe");
+        assert(del_ok == 0);
+
+        add_cached_test_result(path_hash, ground_truth);
+    }
 
     return ground_truth;
 }
@@ -45,6 +54,8 @@ static int get_clang_ground_truth(const char* source_path)
 struct perf_numbers
 {
     uint64_t total_tests = 0;
+    float test_cache_load;
+    float test_cache_save;
     std::vector<float> read_file;
     std::vector<float> invalid_lex;
     std::vector<float> lex;
@@ -602,6 +613,15 @@ int run_tests_on_folder(int folder_index)
     Timer timer;
     timer.start();
 
+    // Load cached test results
+    {
+        Timer t;
+        t.start();
+        load_test_results();
+        t.end();
+        perf.test_cache_load = t.milliseconds();
+    }
+
     switch (folder_index)
     {
     case 0: // test all
@@ -731,10 +751,20 @@ int run_tests_on_folder(int folder_index)
         return 1;
     }
 
+    // Save cached test results
+    {
+        Timer t;
+        t.start();
+        save_test_results();
+        t.end();
+        perf.test_cache_save = t.milliseconds();
+    }
+
     timer.end();
     printf("%" PRIu64 " Tests took %.2fms\n", perf.total_tests, timer.milliseconds());
 
     float tracked_total = 0.0f;
+    tracked_total += perf.test_cache_load + perf.test_cache_save;
     printf(                                         "Perf Results  [samples,      total,        avg,        low,       high]\n");
     tracked_total += print_perf(&perf.read_file,    "  read_file:  ", "\n");
     tracked_total += print_perf(&perf.invalid_lex,  "  invalid_lex:", "\n");
@@ -747,6 +777,10 @@ int run_tests_on_folder(int folder_index)
     tracked_total += print_perf(&perf.ground_truth, "  grnd_truth: ", "\n");
     tracked_total += print_perf(&perf.interp,       "  interp:     ", "\n");
     tracked_total += print_perf(&perf.cleanup,      "  cleanup:    ", "\n");
+    printf(                                         " test cache misses: %" PRIu32 ", load: %.2fms, save: %.2fms\n", 
+        get_test_cache_misses(), 
+        perf.test_cache_load, 
+        perf.test_cache_save);
     printf(                                         "Unaccounted for: %.2fms\n", (timer.milliseconds() - tracked_total));
     getchar();
     test_simplify_double_negative();
