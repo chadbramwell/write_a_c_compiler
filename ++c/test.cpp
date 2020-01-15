@@ -1,5 +1,6 @@
 #include "test.h"
 #include "lex.h"
+#include "ir.h"
 #include "ast.h"
 #include "gen.h"
 #include "simplify.h"
@@ -17,6 +18,7 @@
 struct test_config
 {
     bool lex;
+    bool ir;
     bool ast;
     bool gen;
 
@@ -60,6 +62,7 @@ struct perf_numbers
     std::vector<float> invalid_lex;
     std::vector<float> lex;
     std::vector<float> lex_strip;
+    std::vector<float> ir;
     std::vector<float> ast;
     std::vector<float> gen_asm;
     std::vector<float> gen_exe;
@@ -258,6 +261,19 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
             update_perf(&perf->lex_strip, timer.milliseconds());
         }
 
+        ////// IR
+        if (cfg.ir)
+        {
+            IR* irout = NULL;
+            size_t irout_size = 0;
+            timer.start();
+            bool ok = ir(lexout.tokens, lexout.num_tokens, &irout, &irout_size);
+            timer.end();
+            assert(ok);
+
+            update_perf(&perf->ir, timer.milliseconds());
+        }
+
         ////// AST
         if (!cfg.ast)
         {
@@ -422,6 +438,10 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
     }
     if (cfg.ast) {
         printf("%sAST", prior ? ", " : ""); 
+        prior = true;
+    }
+    if (cfg.ir) {
+        printf("%sIR", prior ? ", " : "");
         prior = true;
     }
     if (cfg.interp) {
@@ -596,6 +616,10 @@ int run_tests_on_folder(int folder_index)
     test_config TEST_LEX = {};
     TEST_LEX.lex = true;
 
+    test_config TEST_IR = {};
+    TEST_IR.lex = true;
+    TEST_IR.ir = true;
+
     test_config TEST_INVALID_LEX = {};
     TEST_INVALID_LEX.lex = true;
     TEST_INVALID_LEX.expect_lex_fail = true;
@@ -629,6 +653,7 @@ int run_tests_on_folder(int folder_index)
     case 1:
         Test(TEST_LEX, &perf, "../stage_1/valid/");
         Test(TEST_LEX, &perf, "../stage_1/invalid/");
+        Test(TEST_IR, &perf, "../stage_1/valid/");
         Test(TEST_INTERP, &perf, "../stage_1/valid/");
         Test(TEST_GEN, &perf, "../stage_1/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_1/valid/");
@@ -770,6 +795,7 @@ int run_tests_on_folder(int folder_index)
     tracked_total += print_perf(&perf.invalid_lex,  "  invalid_lex:", "\n");
     tracked_total += print_perf(&perf.lex,          "  lex:        ", "\n");
     tracked_total += print_perf(&perf.lex_strip,    "  lex_strip:  ", "\n");
+    tracked_total += print_perf(&perf.ir,           "  ir:         ", "\n");
     tracked_total += print_perf(&perf.ast,          "  ast:        ", "\n");
     tracked_total += print_perf(&perf.gen_asm,      "  gen_asm:    ", "\n");
     tracked_total += print_perf(&perf.gen_exe,      "  gen_exe:    ", "\n");
@@ -1023,6 +1049,7 @@ int run_specific_test(const char* path, bool verbose)
         {
             test_config test_cfg = {};
             test_cfg.lex = true;
+            test_cfg.ir = true;
             test_cfg.ast = true;
             test_cfg.gen = true;
             test_cfg.dump = true;

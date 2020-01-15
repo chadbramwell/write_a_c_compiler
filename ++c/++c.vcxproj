@@ -121,6 +121,7 @@
     <ClCompile Include="gen.cpp" />
     <ClCompile Include="ast.cpp" />
     <ClCompile Include="interp.cpp" />
+    <ClCompile Include="ir.cpp" />
     <ClCompile Include="lex.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="simplify.cpp" />
@@ -137,6 +138,7 @@
     <ClInclude Include="gen.h" />
     <ClInclude Include="ast.h" />
     <ClInclude Include="interp.h" />
+    <ClInclude Include="ir.h" />
     <ClInclude Include="lex.h" />
     <ClInclude Include="simplify.h" />
     <ClInclude Include="strings.h" />

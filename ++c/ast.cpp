@@ -51,28 +51,28 @@ struct ast_context
     ASTNodeArray var_decl_stack; // fixup references
 };
 
-ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_block_item(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_declaration(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_conditional_exp(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_logical_or_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_logical_and_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_equality_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_relational_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_additive_expression(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_term(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_factor(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_for_loop(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_while_loop(TokenStream& io_tokens, ast_context* ctx);
-ASTNode* parse_do_while_loop(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_function(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_function_call(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_block_item(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_declaration(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_declaration_with_semicolon(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_statement(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_conditional_exp(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_logical_or_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_logical_and_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_equality_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_relational_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_additive_expression(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_term(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_factor(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_for_loop(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_while_loop(TokenStream& io_tokens, ast_context* ctx);
+static ASTNode* parse_do_while_loop(TokenStream& io_tokens, ast_context* ctx);
 
-bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, ast_context* ctx);
-void append_error(ast_context* ctx, const Token* token, const char* reason);
+static bool expect_and_advance(TokenStream& io_tokens, eToken expected_token, ast_context* ctx);
+static void append_error(ast_context* ctx, const Token* token, const char* reason);
 
 ASTNode* parse_program(TokenStream& io_tokens, ast_context* ctx)
 {
