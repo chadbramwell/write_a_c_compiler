@@ -4,6 +4,7 @@
 Debug
 x64
 *.s
+*.ll
 *.obj
 *.timer.log
 *.exe
