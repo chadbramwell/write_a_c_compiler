@@ -1,0 +1,1 @@
+cl /Z7 main.cpp test.cpp file.cpp dir.cpp lex.cpp ast.cpp ast_alloc.cpp interp.cpp strings.cpp simplify.cpp timer.cpp test_cache.c ir.cpp gen.cpp %*

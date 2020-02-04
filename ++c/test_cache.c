@@ -13,7 +13,7 @@ static struct cached_test* g_tests;
 static size_t g_tests_len;
 static uint32_t g_cache_misses;
 
-uint32_t get_test_cache_misses()
+uint32_t get_test_cache_misses(void)
 {
     return g_cache_misses;
 }
@@ -50,7 +50,7 @@ void add_cached_test_result(uint32_t path_hash, int32_t result)
     g_tests[g_tests_len].exit_code = result;
     ++g_tests_len;
 }
-void save_test_results()
+void save_test_results(void)
 {
     FILE* file;
     errno_t err = fopen_s(&file, "tests.cache", "wb");
@@ -69,7 +69,7 @@ void save_test_results()
     }
     fclose(file);
 }
-void load_test_results()
+void load_test_results(void)
 {
     FILE* file;
     errno_t err = fopen_s(&file, "tests.cache", "rb");

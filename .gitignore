@@ -2,6 +2,7 @@
 *.vcxproj.user
 .vs
 Debug
+Release
 x64
 *.s
 *.ll

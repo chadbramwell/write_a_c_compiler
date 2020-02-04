@@ -1022,7 +1022,7 @@ bool gen_asm_from_ir(FILE* out, const IR** ir, size_t* ir_size)
         !2 = !{!"clang version 6.0.1 (tags/RELEASE_601/final)"}
     */
     fprintf(out, ".text\n");
-    fprintf(out, ".def")
+    fprintf(out, ".def");
 
     return true;
 }
