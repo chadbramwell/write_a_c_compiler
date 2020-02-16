@@ -882,31 +882,31 @@ bool gen_asm(FILE* file, const AsmInput& input)
 
     /* CLANG ASM of "int foo;int main(){return foo;}int foo = 3;"
         .text
-        .def	 main;
-        .scl	2;
-        .type	32;
+        .def     main;
+        .scl    2;
+        .type    32;
         .endef
-        .globl	main                    # -- Begin function main
-        .p2align	4, 0x90
+        .globl    main                    # -- Begin function main
+        .p2align    4, 0x90
     main:                                   # @main
     .seh_proc main
     # %bb.0:
-        pushq	%rax
+        pushq    %rax
         .seh_stackalloc 8
         .seh_endprologue
-        movl	$0, 4(%rsp)
-        movl	foo(%rip), %eax
-        popq	%rcx
+        movl    $0, 4(%rsp)
+        movl    foo(%rip), %eax
+        popq    %rcx
         retq
         .seh_handlerdata
         .text
         .seh_endproc
                                             # -- End function
         .data
-        .globl	foo                     # @foo
-        .p2align	2
+        .globl    foo                     # @foo
+        .p2align    2
     foo:
-        .long	3                       # 0x3
+        .long    3                       # 0x3
     */
 
     // expose all global functions and find all global vars

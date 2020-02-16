@@ -1,11 +1,12 @@
 #include "dir.h"
+#include "debug.h"
 #include "stdio.h"
 #include "stdlib.h"
 
 int replace_tabs_in(const char* path, const char* filter)
 {
-    DirectoryIter* iter = dopen(path, filter);
-    if (!iter)
+    DirectoryIter* iter = nullptr;
+    if (!dopen(&iter, path, filter))
     {
         printf("failed to open directory %s with filter %s\n", path, filter);
         return 1;
@@ -32,7 +33,7 @@ int replace_tabs_in(const char* path, const char* filter)
         size_t read = fread_s(buff, file_size, 1, file_size, file);
         if (read != file_size)
         {
-            printf("failed to read full file into memory. expected %d, got %d\n", file_size, read);
+            printf("failed to read full file into memory. expected %d, got %d\n", file_size, (int)read);
             return 3;
         }
         fseek(file, 0, SEEK_SET);
@@ -65,6 +66,7 @@ int main(int argc, char** argv)
     if (argc != 2)
     {
         printf("expected directory as first argument\n");
+        debug_break();
         return 1;
     }
 

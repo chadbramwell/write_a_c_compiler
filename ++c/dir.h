@@ -14,5 +14,6 @@ bool dnext(DirectoryIter* io_iter);
 bool disdir(DirectoryIter* io_iter);
 bool dendswith(DirectoryIter* io_iter, const char* str);
 const char* dfpath(DirectoryIter* io_iter);
+const char* dfname(DirectoryIter* io_iter);
 
 bool get_absolute_path(const char* partial_path, char(*out_abs_path)[260]);

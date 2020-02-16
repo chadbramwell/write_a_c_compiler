@@ -22,6 +22,13 @@ bool is_slash(char c)
 
 bool dopen(DirectoryIter** io_iter, const char* path, const char* filter)
 {
+    {
+        const char* end = path;
+        while (*end) ++end;
+        --end;
+        assert((*end == '/' || *end == '\\') && "paths not ending in a slash will do unexpected things... todo: fix");
+    }
+
     if (!io_iter)
     {
         debug_break();
@@ -30,7 +37,7 @@ bool dopen(DirectoryIter** io_iter, const char* path, const char* filter)
     *io_iter = NULL; // will get set on success.
 
     DirectoryIter* dir = (DirectoryIter*)malloc(sizeof(DirectoryIter));
-    
+
 
     DWORD strlen = GetFullPathNameA(path, MAX_PATH, dir->fpath, &dir->fname);
     assert(strlen != 0);
@@ -117,6 +124,11 @@ bool dendswith(DirectoryIter* io_iter, const char* str)
 const char* dfpath(DirectoryIter* dir)
 {
     return dir->fpath;
+}
+
+const char* dfname(DirectoryIter* dir)
+{
+    return dir->data.cFileName;
 }
 
 bool get_absolute_path(const char* partial_path, char(*out_abs_path)[MAX_PATH])
