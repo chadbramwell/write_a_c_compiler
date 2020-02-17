@@ -128,7 +128,7 @@ static eFailureReason global_var_or_func(eVT vt, TokenStream* io_tokens, ir_cont
 
         size_t i = emplace_back_ir(ctx);
         IR* r = ctx->ir + i;
-        r->type = IR_FUNC_END;
+        r->type = IR_RETURN_VOID;
     }
     
     *io_tokens = tokens;
@@ -180,4 +180,18 @@ bool ir(const Token* tokens, size_t num_tokens, IR** out, size_t* out_size)
     *out_size = ctx.irsz;
 
     return true;
+}
+
+void dump_ir(FILE* out, const IR* ir, size_t ir_size) {
+    const IR* const ir_end = ir + ir_size;
+    while (ir != ir_end) {
+        switch (ir->type) {
+        case IR_UNKNOWN: fprintf(out, "IR_UNKNOWN\n"); break;
+        case IR_GLOBAL_FUNC: fprintf(out, "IR_GLOBAL_FUNC(%s)\n", ir->func.name); break;
+        case IR_RETURN_VOID: fprintf(out, "IR_RETURN_VOID\n"); break;
+        case IR_RETURN_CONSTANT: fprintf(out, "IR_RETURN_CONSTANT(%" PRIu64 ")\n", ir->constant.value); break;
+        default: debug_break(); fprintf(out, "??? TODO ???\n"); break;
+        }
+        ++ir;
+    }
 }

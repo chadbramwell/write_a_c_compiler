@@ -22,4 +22,4 @@ struct AsmInput
 };
 
 bool gen_asm(FILE* file, const AsmInput& input);
-bool gen_asm_from_ir(FILE* out, const IR** ir, size_t* ir_size);
+bool gen_asm_from_ir(FILE* out, const IR* ir, size_t ir_size);

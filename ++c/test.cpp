@@ -15,6 +15,24 @@
 #include <string>
 #include <vector>
 
+struct perf_numbers
+{
+    uint64_t total_tests = 0;
+    float test_cache_load;
+    float test_cache_save;
+    std::vector<float> read_file;
+    std::vector<float> invalid_lex;
+    std::vector<float> lex;
+    std::vector<float> lex_strip;
+    std::vector<float> ir;
+    std::vector<float> ast;
+    std::vector<float> gen_asm;
+    std::vector<float> gen_exe;
+    std::vector<float> run_exe;
+    std::vector<float> ground_truth;
+    std::vector<float> interp;
+    std::vector<float> cleanup;
+};
 struct test_config
 {
     bool lex;
@@ -29,8 +47,33 @@ struct test_config
     bool print_file_path;
     bool expect_lex_fail;
 };
+struct test_iter
+{
+    const char* file_path;
 
-static int get_clang_ground_truth(const char* source_path)
+    size_t file_length;
+    const char* file_data;
+
+    LexOutput lex_out;
+    LexInput lex_in;
+
+    IR* ir_out;
+    size_t ir_out_size;
+
+    ASTOut ast_out;
+
+    AsmInput asm_in;
+    char asm_file_path[L_tmpnam_s + 2]; // NOTE: +2 for .s
+    char exe_file_path[L_tmpnam_s + 4]; // NOTE: +4 for .exe
+    char clang_buffer[1024];
+
+    int64_t interp_result;
+    int clang_ground_truth;
+    int our_result;
+};
+
+
+int get_clang_ground_truth(const char* source_path)
 {
     uint32_t path_hash = test_cache_path_hash(source_path);
 
@@ -53,24 +96,6 @@ static int get_clang_ground_truth(const char* source_path)
     return ground_truth;
 }
 
-struct perf_numbers
-{
-    uint64_t total_tests = 0;
-    float test_cache_load;
-    float test_cache_save;
-    std::vector<float> read_file;
-    std::vector<float> invalid_lex;
-    std::vector<float> lex;
-    std::vector<float> lex_strip;
-    std::vector<float> ir;
-    std::vector<float> ast;
-    std::vector<float> gen_asm;
-    std::vector<float> gen_exe;
-    std::vector<float> run_exe;
-    std::vector<float> ground_truth;
-    std::vector<float> interp;
-    std::vector<float> cleanup;
-};
 static void update_perf(std::vector<float>* p, float ms)
 {
     p->push_back(ms);
@@ -145,31 +170,31 @@ static void cleanup_artifacts(std::vector<float>* p, const char* path)
     update_perf(p, t.milliseconds());
 }
 
-static void dump(test_config cfg, const LexInput& lexin, const LexOutput& lexout, const ASTNode* root, const AsmInput* asm_in)
+static void dump(test_config cfg, const test_iter& test)
 {
     if (cfg.dump)
     {
-        printf("===DEBUG INFO FOR [%s]===\n", lexin.filename);
+        printf("===DEBUG INFO FOR [%s]===\n", test.lex_in.filename);
         printf("=== RAW FILE ===\n");
-        fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
+        fwrite(test.lex_in.stream, 1, (size_t)test.lex_in.length, stdout);
         printf("\n");
         if (cfg.lex) 
         {
             printf("=== LEX ===\n");
-            dump_lex(stdout, &lexout);
+            dump_lex(stdout, &test.lex_out);
             printf("\n");
         }
         if (cfg.ast)
         {
             printf("=== AST ===\n");
-            dump_ast(stdout, root, 0);
+            dump_ast(stdout, test.ast_out.root, 0);
             //dump_ast_errors(stdout, )
             printf("\n");
         }
         if (cfg.gen)
         {
             printf("=== GEN ASSEMBLY ===\n");
-            gen_asm(stdout, *asm_in);
+            gen_asm(stdout, test.asm_in);
             printf("\n");
 
             fprintf(stdout, "Clang's ASM==[\n");
@@ -178,7 +203,7 @@ static void dump(test_config cfg, const LexInput& lexin, const LexOutput& lexout
             tmpnam_s(temp_name);
 
             char temp_cmd[256];
-            sprintf_s(temp_cmd, "clang -S %s -o%s", lexin.filename, temp_name);
+            sprintf_s(temp_cmd, "clang -S %s -o%s", test.lex_in.filename, temp_name);
             assert(0 == system(temp_cmd));
             file_dump_to_stdout(temp_name);
         }
@@ -197,22 +222,23 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
 
     do
     {
+        struct test_iter test = {};
+
         if (disdir(dir))
             continue;
 
         ++test_count;
 
-        const char* file_path = dfpath(dir);
-        if (cfg.print_file_path) printf("> %s\n", file_path);
+        test.file_path = dfpath(dir);
+        if (cfg.print_file_path) printf("> %s\n", test.file_path);
 
         ///// READ FILE
         Timer timer;
         timer.start();
-        size_t file_length;
-        const char* file_data = file_read_into_memory(file_path, &file_length);
-        if (!file_data)
+        test.file_data = file_read_into_memory(test.file_path, &test.file_length);
+        if (!test.file_data)
         {
-            printf("failed to read file %s\n", file_path);
+            printf("failed to read file %s\n", test.file_path);
             success = false;
             ++test_fail;
             continue;
@@ -221,17 +247,16 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         update_perf(&perf->read_file, timer.milliseconds());
 
         ///// LEX
-        LexOutput lexout = {};
-        LexInput lexin = init_lex(file_path, file_data, file_length);
+        test.lex_in = init_lex(test.file_path, test.file_data, test.file_length);
         if (cfg.expect_lex_fail)
         {
             timer.start();
-            if (lex(&lexin, &lexout))
+            if (lex(&test.lex_in, &test.lex_out))
             {
                 debug_break();
                 success = false;
                 ++test_fail;
-                printf("expected %s to fail lex but it succeeded?\n", file_path);
+                printf("expected %s to fail lex but it succeeded?\n", test.file_path);
                 continue;
             }
             timer.end();
@@ -242,21 +267,21 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         {
             LexOutput lexout_temp = {};
             timer.start();
-            if (!lex(&lexin, &lexout_temp))
+            if (!lex(&test.lex_in, &lexout_temp))
             {
                 debug_break();
                 success = false;
                 ++test_fail;
-                printf("failed to lex file %s\nComparing to Clang error:\n", file_path);
+                printf("failed to lex file %s\nComparing to Clang error:\n", test.file_path);
                 char buff[256];
-                sprintf_s(buff, "clang %s", file_path);
+                sprintf_s(buff, "clang %s", test.file_path);
                 system(buff);
                 continue;
             }
             timer.end();
             update_perf(&perf->lex, timer.milliseconds());
             timer.start();
-            lex_strip_comments(&lexout_temp, &lexout);
+            lex_strip_comments(&lexout_temp, &test.lex_out);
             timer.end();
             update_perf(&perf->lex_strip, timer.milliseconds());
         }
@@ -264,10 +289,12 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         ////// IR
         if (cfg.ir)
         {
-            IR* irout = NULL;
-            size_t irout_size = 0;
             timer.start();
-            bool ok = ir(lexout.tokens, lexout.num_tokens, &irout, &irout_size);
+            bool ok = ir(
+                test.lex_out.tokens, 
+                test.lex_out.num_tokens, 
+                &test.ir_out, 
+                &test.ir_out_size);
             timer.end();
             assert(ok);
 
@@ -275,43 +302,32 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         }
 
         ////// AST
-        if (!cfg.ast)
+        if (cfg.ast)
         {
-            dump(cfg, lexin, lexout, NULL, NULL);
-            continue;
-        }
+            timer.start();
+            if (!ast(test.lex_out.tokens, test.lex_out.num_tokens, &test.ast_out))
+            {
+                printf("failed to ast file %s\n", test.file_path);
+                success = false;
+                ++test_fail;
 
-        timer.start();
-        ASTOut ast_out;
-        if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
-        {
-            printf("failed to ast file %s\n", file_path);
-            success = false;
-            ++test_fail;
+                test_config temp_cfg = {};
+                temp_cfg.lex = true;
+                temp_cfg.dump = true;
 
-            test_config temp_cfg = {};
-            temp_cfg.lex = true;
-            temp_cfg.dump = true;
-
-            dump(temp_cfg, lexin, lexout, ast_out.root, NULL);
-            debug_break();
-            continue;
-        }
-        timer.end();
-        update_perf(&perf->ast, timer.milliseconds());
-
-        // From here on, our tests diverge. If we only wanted to TEST_AST, exit now.
-        if (!cfg.gen && !cfg.interp && !cfg.simplify)
-        {
-            dump(cfg, lexin, lexout, ast_out.root, NULL);
-            continue;
+                dump(temp_cfg, test);
+                debug_break();
+                continue;
+            }
+            timer.end();
+            update_perf(&perf->ast, timer.milliseconds());
         }
 
         // Calc Ground Truth
         // - clang *.c
         // - run clangs' output: a.exe, and return result
         timer.start();
-        int clang_ground_truth = get_clang_ground_truth(file_path);
+        test.clang_ground_truth = get_clang_ground_truth(test.file_path);
         timer.end();
         update_perf(&perf->ground_truth, timer.milliseconds());
         //printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
@@ -319,39 +335,36 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         ///// ASM
         if (cfg.gen)
         {
-            AsmInput asm_in;
-            asm_in.root = ast_out.root;
+            test.asm_in.root = test.ast_out.root;
 
-            char asm_file_path[L_tmpnam_s + 2]; // NOTE: +2 for .s
-            char exe_file_path[L_tmpnam_s + 4]; // NOTE: +4 for .exe
-            errno_t err = tmpnam_s(asm_file_path);
+            errno_t err = tmpnam_s(test.asm_file_path);
             if (err) debug_break();
-            err = tmpnam_s(exe_file_path);
+            err = tmpnam_s(test.exe_file_path);
             if (err) debug_break();
 
             // append .s to each temp file name
             {
-                char* set_s = asm_file_path;
+                char* set_s = test.asm_file_path;
                 while (*set_s) ++set_s;
                 memcpy(set_s, ".s", 3); // 3 to include null-terminator
 
-                set_s = exe_file_path;
+                set_s = test.exe_file_path;
                 while (*set_s) ++set_s;
                 memcpy(set_s, ".exe", 5); // 5 to include null-terminator
             }
 
             {
                 FILE* file;
-                err = fopen_s(&file, asm_file_path, "wb");
+                err = fopen_s(&file, test.asm_file_path, "wb");
                 if (err) debug_break();
 
                 timer.start();
-                if (!gen_asm(file, asm_in))
+                if (!gen_asm(file, test.asm_in))
                 {
-                    printf("failed to gen asm for %s\n", file_path);
+                    printf("failed to gen asm for %s\n", test.file_path);
                     success = false;
                     ++test_fail;
-                    gen_asm(stdout, asm_in);
+                    gen_asm(stdout, test.asm_in);
                     continue;
                 }
                 timer.end();
@@ -360,13 +373,12 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                 fclose(file);
             }
 
-            char clang_buffer[1024];
-            sprintf_s(clang_buffer, "clang %s -o%s", asm_file_path, exe_file_path);
+            sprintf_s(test.clang_buffer, "clang %s -o%s", test.asm_file_path, test.exe_file_path);
             timer.start();
-            if (int clang_error = system(clang_buffer))
+            if (int clang_error = system(test.clang_buffer))
             {
                 printf("Clang Failed with %d\n", clang_error);
-                gen_asm(stdout, asm_in);
+                gen_asm(stdout, test.asm_in);
                 success = false;
                 ++test_fail;
                 debug_break();
@@ -376,56 +388,53 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
             update_perf(&perf->gen_exe, timer.milliseconds());
 
             timer.start();
-            int our_result = system(exe_file_path);
+            test.our_result = system(test.exe_file_path);
             timer.end();
-            if (clang_ground_truth != our_result)
+            if (test.clang_ground_truth != test.our_result)
             {
                 test_config temp_cfg = cfg;
                 temp_cfg.dump = true;
 
-                dump(temp_cfg, lexin, lexout, ast_out.root, &asm_in);
-                printf("Ground Truth [%d] does not match our result [%d]\n", clang_ground_truth, our_result);
+                dump(temp_cfg, test);
+                printf("Ground Truth [%d] does not match our result [%d]\n", test.clang_ground_truth, test.our_result);
                 debug_break();
             }
             update_perf(&perf->run_exe, timer.milliseconds());
-
-            dump(cfg, lexin, lexout, ast_out.root, &asm_in);
-            continue;
         }
 
         // SIMPLIFY
         if (cfg.simplify)
         {
-            debug_break();
-            continue;
+            debug_break(); //TODO?
         }
 
         // INTERP
         if (cfg.interp)
         {
-            int64_t interp_result;
+            test.interp_result;
             timer.start();
-            if (!interp_return_value(ast_out.root, &interp_result))
+            if (!interp_return_value(test.ast_out.root, &test.interp_result))
             {
                 debug_break();
-                printf("Interp failed for [%s].\n", file_path);
+                printf("Interp failed for [%s].\n", test.file_path);
                 continue;
             }
             timer.end();
             update_perf(&perf->interp, timer.milliseconds());
 
-            if (interp_result != clang_ground_truth)
+            if (test.interp_result != test.clang_ground_truth)
             {
                 test_config temp_cfg = cfg;
                 temp_cfg.dump = true;
 
                 printf("Interp result of [%s] does not match ground truth!\nReturned: %" PRIi64 " vs Ground Truth: %d\n",
-                    file_path, interp_result, clang_ground_truth);
-                dump(temp_cfg, lexin, lexout, ast_out.root, NULL);
+                    test.file_path, test.interp_result, test.clang_ground_truth);
+                dump(temp_cfg, test);
                 debug_break();
             }
-            continue;
         }
+
+        dump(cfg, test);
 
     } while (dnext(dir));
     dclose(&dir);
@@ -436,22 +445,23 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         printf("LEX"); 
         prior = true;
     }
-    if (cfg.ast) {
-        printf("%sAST", prior ? ", " : ""); 
-        prior = true;
-    }
     if (cfg.ir) {
         printf("%sIR", prior ? ", " : "");
         prior = true;
     }
-    if (cfg.interp) {
-        printf("%sINTERPRETER", prior ? ", " : "");
+    if (cfg.ast) {
+        printf("%sAST", prior ? ", " : ""); 
         prior = true;
     }
     if (cfg.gen) {
         printf("%sGEN(ASM)", prior ? ", " : "");
         prior = true;
     }
+    if (cfg.interp) {
+        printf("%sINTERPRETER", prior ? ", " : "");
+        prior = true;
+    }
+    
     if (!prior) debug_break(); // missing a check for a cfg flag.
 
     success
@@ -459,16 +469,6 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         : printf("[%s]:FAILED. Tests Passed: %d/%d\n", path, (test_count - test_fail), test_count);
 
     perf->total_tests += test_count;
-}
-
-static void init_lex_to_ret2(LexInput& lexin)
-{
-    const char* prog =
-        "int main() {\n"
-        "    return 2;\n"
-        "}\n";
-
-    lexin = init_lex("ret2", prog, strlen(prog));
 }
 
 static void test_simplify(const LexInput& lexin)
@@ -629,6 +629,11 @@ int run_tests_on_folder(int folder_index)
     TEST_GEN.ast = true;
     TEST_GEN.gen = true;
 
+    test_config TEST_IR_GEN = {};
+    TEST_IR_GEN.lex = true;
+    TEST_IR_GEN.ir = true;
+    TEST_IR_GEN.gen = true;
+
     test_config TEST_INTERP = {};
     TEST_INTERP.lex = true;
     TEST_INTERP.ast = true;
@@ -656,6 +661,7 @@ int run_tests_on_folder(int folder_index)
         Test(TEST_IR, &perf, "../stage_1/valid/");
         Test(TEST_INTERP, &perf, "../stage_1/valid/");
         Test(TEST_GEN, &perf, "../stage_1/valid/");
+        Test(TEST_IR_GEN, &perf, "../stage_1/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_1/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_1/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not
@@ -814,252 +820,4 @@ int run_tests_on_folder(int folder_index)
     test_simplify_dn_and_1p2();
 
     return 0;
-}
-
-struct path
-{
-    const char* original;
-    const char* name_start;
-    const char* name_end;
-
-    char src_path[260];
-    char lex_path[260];
-    char ast_path[260];
-    char asm_path[260];
-    char exe_path[260];
-};
-
-static void path_init(path* p, const char* filename)
-{
-    memset(p, 0, sizeof(*p));
-    p->original = filename;
-
-    // find very end
-    const char* end = filename;
-    while (*end)
-        ++end;
-
-    // work backwards to find first extension 
-    p->name_end = end; // set now, '.' may not exist in filename
-    while (end > filename && *end != '.')
-        --end;
-    if (end != filename)
-        p->name_end = end;
-
-    // work backwards to find name start
-    p->name_start = filename;
-    while (end > filename && *end != '/' && *end != '\\')
-        --end;
-    if (end != filename)
-        p->name_start = end + 1;
-
-    int name_no_path_len = int(p->name_end - p->original);
-    if (!get_absolute_path(p->original, &p->src_path))
-        debug_break();
-    sprintf_s(p->lex_path, "%.*s.lex.txt", name_no_path_len, p->original);
-    sprintf_s(p->ast_path, "%.*s.ast.txt", name_no_path_len, p->original);
-    sprintf_s(p->asm_path, "%.*s.s", name_no_path_len, p->original);
-
-    char tmp[260];
-    sprintf_s(tmp, "%.*s.exe", name_no_path_len, p->original);
-    if (!get_absolute_path(tmp, &p->exe_path))
-        debug_break();
-}
-
-int run_specific_test(const char* path, bool verbose)
-{
-    bool verbose_print = false;
-    bool verbose_print_to_disk = false;
-    bool verbose_print_timers = false;
-
-    Timer main_timer;
-    main_timer.start();
-
-    LexInput lexin;
-    if (path)
-    {
-        size_t file_length;
-        const char* file_data = file_read_into_memory(path, &file_length);
-        if (!file_data)
-        {
-            // error reasons printed by function.
-            return 2;
-        }
-        lexin = init_lex(path, file_data, file_length);
-
-        if (verbose)
-        {
-                verbose_print = true;
-                verbose_print_timers = true;
-        }
-
-        if (verbose_print)
-        {
-            fprintf(stdout, "===RAW FILE [%s]===\n", lexin.filename);
-            fwrite(lexin.stream, 1, (size_t)lexin.length, stdout);
-            fprintf(stdout, "\n===END RAW FILE===\n");
-        }
-    }
-    else
-    {
-        printf("no path given so defaulting to simple return 2 program\n");
-        init_lex_to_ret2(lexin);
-    }
-
-    FILE* timer_log;
-    if (0 != fopen_s(&timer_log, "++c.timer.log", "ab"))
-    {
-        printf("failed to open timer log file to append data\n");
-        return 3;
-    }
-
-    struct path p;
-    path_init(&p, lexin.filename);
-
-    LexOutput lexout = {};
-    if (!lex(&lexin, &lexout))
-    {
-        fprintf(stdout, "lex failure: %s\n", lexout.failure_reason);
-        dump_lex(stdout, &lexout);
-        main_timer.end();
-        fprintf(timer_log, "\n[%s] lex fail, took %.2fms\n", p.original, main_timer.milliseconds());
-        debug_break();
-        return 1;
-    }
-    else if (verbose_print)
-    {
-        fprintf(stdout, "==lex success!==[");
-        dump_lex(stdout, &lexout);
-        fprintf(stdout, "]\n");
-
-        FILE* file;
-        if (verbose_print_to_disk && 0 == fopen_s(&file, p.lex_path, "wb"))
-        {
-            dump_lex(file, &lexout);
-            fclose(file);
-        }
-    }
-
-    ASTOut ast_out;
-    if (!ast(lexout.tokens, lexout.num_tokens, &ast_out))
-    {
-        main_timer.end();
-        fprintf(timer_log, "[%s] AST fail, took %.2fms\n", p.original, main_timer.milliseconds());
-        debug_break();
-        return 1;
-    }
-    else if (verbose_print)
-    {
-        fprintf(stdout, "==ast success!==[\n");
-        dump_ast(stdout, ast_out.root, 0);
-        fprintf(stdout, "\n]\n");
-
-        FILE* file;
-        if (verbose_print_to_disk && 0 == fopen_s(&file, p.ast_path, "wb"))
-        {
-            dump_ast(file, ast_out.root, 0);
-            fclose(file);
-        }
-    }
-
-    const int ground_truth = get_clang_ground_truth(p.src_path);
-
-    int64_t interp_result;
-    if (!interp_return_value(ast_out.root, &interp_result))
-    {
-        fprintf(stdout, "Interpreter failed.\n");
-    }
-    if (interp_result != ground_truth)
-    {
-        fprintf(stdout, "Interpreter result %" PRIi64 " does not match ground truth result %d\n", interp_result, ground_truth);
-        debug_break();
-    }
-
-    AsmInput asm_in;
-    asm_in.root = ast_out.root;
-
-    FILE* asm_test_file;
-    if (0 != tmpfile_s(&asm_test_file))
-        return 4;
-    if (!gen_asm(asm_test_file, asm_in))
-    {
-        fprintf(stdout, "gen_asm failure\n");
-        gen_asm(stdout, asm_in);
-        main_timer.end();
-        fprintf(timer_log, "[%s] gen_asm failed, took %.2fms\n", p.original, main_timer.milliseconds());
-        debug_break();
-        return 1;
-    }
-    else if (verbose_print)
-    {
-        fprintf(stdout, "==gen_asm success!==[\n");
-        gen_asm(stdout, asm_in);
-        fprintf(stdout, "\n]\n");
-
-        fprintf(stdout, "Clang's ASM==[\n");
-
-        char temp[260];
-        sprintf_s(temp, "clang -S %s -o%s", p.original, p.asm_path);
-        assert(0 == system(temp));
-        file_dump_to_stdout(p.asm_path);
-    }
-    fclose(asm_test_file);
-
-
-
-    // write assembly(.s) file.
-    FILE* file;
-    if (0 == fopen_s(&file, p.asm_path, "wb"))
-    {
-        gen_asm(file, asm_in);
-        fclose(file);
-    }
-
-    // generate exe with clang
-    Timer clang_timer;
-    int clang_error = 0;
-    {
-        char clang_buffer[1024];
-        sprintf_s(clang_buffer, "clang -g %s -o%s", p.asm_path, p.exe_path);
-        //printf("FILENAME:[%s]\n", clang_buffer);
-        clang_timer.start();
-        clang_error = system(clang_buffer);
-        clang_timer.end();
-        if (verbose_print)
-            fprintf(stdout, "Clang Compliation Result: %d\n", clang_error);
-        if (verbose_print_timers)
-            fprintf(stdout, "Clang Took %.2fms\n", clang_timer.milliseconds());
-    }
-
-    main_timer.end();
-    if (verbose_print_timers) fprintf(stdout, "Total Time: %.2fms\n", main_timer.milliseconds());
-
-    fprintf(timer_log, "[%s] total time: %.2fms of which a system call to clang took %.2fms\n",
-        p.original,
-        main_timer.milliseconds(),
-        clang_timer.milliseconds());
-    fclose(timer_log);
-
-    if (clang_error)
-        debug_break();
-    else
-    {
-        int our_result = system(p.exe_path);
-        if (our_result != ground_truth)
-        {
-            test_config test_cfg = {};
-            test_cfg.lex = true;
-            test_cfg.ir = true;
-            test_cfg.ast = true;
-            test_cfg.gen = true;
-            test_cfg.dump = true;
-
-            if (!verbose_print) dump(test_cfg, lexin, lexout, ast_out.root, &asm_in);
-            printf("Ground Truth [%d] does not match our result [%d]\n", ground_truth, our_result);
-            debug_break();
-        }
-        else if (verbose_print)
-            printf("Return value of program: [%d]\n", our_result);
-    }
-    return clang_error;
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <inttypes.h>
+#include <stdio.h> // FILE
 
 // After writing lex -> ast -> asm, I realized that the layout of function calls in for ast directly matches the data structure of the ast itself.
 // Which leads me to believe that the ast data structure isn't necessary at all. The structure of the function calls could remain to validate
@@ -14,7 +15,7 @@
 enum eIR { // Intermediate Representation
     IR_UNKNOWN,
     IR_GLOBAL_FUNC,
-    IR_FUNC_END,
+    IR_RETURN_VOID,
     IR_RETURN_CONSTANT,
 };
 enum eVT { // Value Type
@@ -39,3 +40,4 @@ struct IR
 };
 
 bool ir(const struct Token* tokens, size_t num_tokens, IR** out, size_t* out_size);
+void dump_ir(FILE* out, const IR* ir, size_t ir_size);
