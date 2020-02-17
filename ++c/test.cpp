@@ -57,8 +57,8 @@ struct test_iter
     LexOutput lex_out;
     LexInput lex_in;
 
-    IR* ir_out;
-    size_t ir_out_size;
+    IR* ir;
+    size_t ir_size;
 
     ASTOut ast_out;
 
@@ -293,8 +293,8 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
             bool ok = ir(
                 test.lex_out.tokens, 
                 test.lex_out.num_tokens, 
-                &test.ir_out, 
-                &test.ir_out_size);
+                &test.ir, 
+                &test.ir_size);
             timer.end();
             assert(ok);
 
@@ -324,13 +324,15 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         }
 
         // Calc Ground Truth
-        // - clang *.c
-        // - run clangs' output: a.exe, and return result
-        timer.start();
-        test.clang_ground_truth = get_clang_ground_truth(test.file_path);
-        timer.end();
-        update_perf(&perf->ground_truth, timer.milliseconds());
-        //printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
+        if (cfg.gen || cfg.interp) {
+            // - clang *.c
+            // - run clangs' output: a.exe, and return result
+            timer.start();
+            test.clang_ground_truth = get_clang_ground_truth(test.file_path);
+            timer.end();
+            update_perf(&perf->ground_truth, timer.milliseconds());
+            //printf("GROUND TRUTH [%s] = %d\n", file_path, clang_ground_truth);
+        }
 
         ///// ASM
         if (cfg.gen)
@@ -353,39 +355,77 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                 memcpy(set_s, ".exe", 5); // 5 to include null-terminator
             }
 
-            {
-                FILE* file;
-                err = fopen_s(&file, test.asm_file_path, "wb");
-                if (err) debug_break();
-
-                timer.start();
-                if (!gen_asm(file, test.asm_in))
+            if (cfg.ast) {
                 {
-                    printf("failed to gen asm for %s\n", test.file_path);
+                    FILE* file;
+                    err = fopen_s(&file, test.asm_file_path, "wb");
+                    if (err) debug_break();
+
+                    timer.start();
+                    if (!gen_asm(file, test.asm_in))
+                    {
+                        printf("failed to gen asm for %s\n", test.file_path);
+                        success = false;
+                        ++test_fail;
+                        gen_asm(stdout, test.asm_in);
+                        continue;
+                    }
+                    timer.end();
+                    update_perf(&perf->gen_asm, timer.milliseconds());
+
+                    fclose(file);
+                }
+
+                sprintf_s(test.clang_buffer, "clang %s -o%s", test.asm_file_path, test.exe_file_path);
+                timer.start();
+                if (int clang_error = system(test.clang_buffer))
+                {
+                    printf("Clang Failed with %d\n", clang_error);
+                    gen_asm(stdout, test.asm_in);
                     success = false;
                     ++test_fail;
-                    gen_asm(stdout, test.asm_in);
+                    debug_break();
                     continue;
                 }
                 timer.end();
-                update_perf(&perf->gen_asm, timer.milliseconds());
-
-                fclose(file);
+                update_perf(&perf->gen_exe, timer.milliseconds());
             }
+            else {
+                assert(cfg.ir);
+                {
+                    FILE* file;
+                    err = fopen_s(&file, test.asm_file_path, "wb");
+                    if (err) debug_break();
 
-            sprintf_s(test.clang_buffer, "clang %s -o%s", test.asm_file_path, test.exe_file_path);
-            timer.start();
-            if (int clang_error = system(test.clang_buffer))
-            {
-                printf("Clang Failed with %d\n", clang_error);
-                gen_asm(stdout, test.asm_in);
-                success = false;
-                ++test_fail;
-                debug_break();
-                continue;
+                    timer.start();
+                    if (!gen_asm_from_ir(file, test.ir, test.ir_size))
+                    {
+                        printf("failed to gen asm for %s\n", test.file_path);
+                        success = false;
+                        ++test_fail;
+                        gen_asm(stdout, test.asm_in);
+                        continue;
+                    }
+                    timer.end();
+                    update_perf(&perf->gen_asm, timer.milliseconds());
+
+                    fclose(file);
+                }
+
+                sprintf_s(test.clang_buffer, "clang %s -o%s", test.asm_file_path, test.exe_file_path);
+                timer.start();
+                if (int clang_error = system(test.clang_buffer))
+                {
+                    printf("Clang Failed with %d\n", clang_error);
+                    gen_asm_from_ir(stdout, test.ir, test.ir_size);
+                    success = false;
+                    ++test_fail;
+                    debug_break();
+                    continue;
+                }
+                timer.end();
+                update_perf(&perf->gen_exe, timer.milliseconds());
             }
-            timer.end();
-            update_perf(&perf->gen_exe, timer.milliseconds());
 
             timer.start();
             test.our_result = system(test.exe_file_path);
