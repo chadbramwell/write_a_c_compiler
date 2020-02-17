@@ -27,6 +27,7 @@ struct perf_numbers
     std::vector<float> ir;
     std::vector<float> ast;
     std::vector<float> gen_asm;
+    std::vector<float> gen_asm_from_ir;
     std::vector<float> gen_exe;
     std::vector<float> run_exe;
     std::vector<float> ground_truth;
@@ -407,7 +408,7 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                         continue;
                     }
                     timer.end();
-                    update_perf(&perf->gen_asm, timer.milliseconds());
+                    update_perf(&perf->gen_asm_from_ir, timer.milliseconds());
 
                     fclose(file);
                 }
@@ -836,20 +837,21 @@ int run_tests_on_folder(int folder_index)
 
     float tracked_total = 0.0f;
     tracked_total += perf.test_cache_load + perf.test_cache_save;
-    printf(                                         "Perf Results  [samples,      total,        avg,        low,       high]\n");
-    tracked_total += print_perf(&perf.read_file,    "  read_file:  ", "\n");
-    tracked_total += print_perf(&perf.invalid_lex,  "  invalid_lex:", "\n");
-    tracked_total += print_perf(&perf.lex,          "  lex:        ", "\n");
-    tracked_total += print_perf(&perf.lex_strip,    "  lex_strip:  ", "\n");
-    tracked_total += print_perf(&perf.ir,           "  ir:         ", "\n");
-    tracked_total += print_perf(&perf.ast,          "  ast:        ", "\n");
-    tracked_total += print_perf(&perf.gen_asm,      "  gen_asm:    ", "\n");
-    tracked_total += print_perf(&perf.gen_exe,      "  gen_exe:    ", "\n");
-    tracked_total += print_perf(&perf.run_exe,      "  run_exe:    ", "\n");
-    tracked_total += print_perf(&perf.ground_truth, "  grnd_truth: ", "\n");
-    tracked_total += print_perf(&perf.interp,       "  interp:     ", "\n");
-    tracked_total += print_perf(&perf.cleanup,      "  cleanup:    ", "\n");
-    printf(                                         " test cache misses: %" PRIu32 ", load: %.2fms, save: %.2fms\n", 
+    printf(                                             "Perf Results      [samples,      total,        avg,        low,       high]\n");
+    tracked_total += print_perf(&perf.read_file,        "  read_file:      ", "\n");
+    tracked_total += print_perf(&perf.invalid_lex,      "  invalid_lex:    ", "\n");
+    tracked_total += print_perf(&perf.lex,              "  lex:            ", "\n");
+    tracked_total += print_perf(&perf.lex_strip,        "  lex_strip:      ", "\n");
+    tracked_total += print_perf(&perf.ir,               "  ir:             ", "\n");
+    tracked_total += print_perf(&perf.ast,              "  ast:            ", "\n");
+    tracked_total += print_perf(&perf.gen_asm,          "  gen_asm:        ", "\n");
+    tracked_total += print_perf(&perf.gen_asm_from_ir,  "  gen_asm_from_ir:", "\n");
+    tracked_total += print_perf(&perf.gen_exe,          "  gen_exe:        ", "\n");
+    tracked_total += print_perf(&perf.run_exe,          "  run_exe:        ", "\n");
+    tracked_total += print_perf(&perf.ground_truth,     "  grnd_truth:     ", "\n");
+    tracked_total += print_perf(&perf.interp,           "  interp:         ", "\n");
+    tracked_total += print_perf(&perf.cleanup,          "  cleanup:        ", "\n");
+    printf(                                             " test cache misses: %" PRIu32 ", load: %.2fms, save: %.2fms\n", 
         get_test_cache_misses(), 
         perf.test_cache_load, 
         perf.test_cache_save);
