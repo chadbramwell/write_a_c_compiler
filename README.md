@@ -201,12 +201,12 @@ Well, wtf, what a trashfire. The most important step (4) where I would think the
   * Spent 2 hours getting ir stage 2 working!
   * Also spent some time (maybe on 2/16) on adding debug_breaks for ir failures so I can easily track down what needs to be fixed.
   * Spent 2 hours adding SSA ([Static Single Assignment form](https://en.wikipedia.org/wiki/Static_single_assignment_form)) registers to IR. Also spent some time writing simplified ir tests (tokens->ir->interp). And the start of an ir interpreter. Run ir tests with `-testir` or `-irtest`
-  * Also improved IR output. <blockquote><p><tt>
-[  0] IR_GLOBAL_FUNC(main)<br>
-[  1] IR_CONSTANT: $3 -> r1<br>
-[  2] IR_UNARY_OP: -r1 -> r2<br>
-[  3] IR_UNARY_OP: !r2 -> r3<br>
-[  4] IR_RETURN_VALUE: r3</tt></p></blockquote>
+  * Also improved IR output. <blockquote>
+<tt>[  0] IR_GLOBAL_FUNC(main)</tt><br>
+<tt>[  1] IR_CONSTANT: $3 -> r1</tt><br>
+<tt>[  2] IR_UNARY_OP: -r1 -> r2</tt><br>
+<tt>[  3] IR_UNARY_OP: !r2 -> r3</tt><br>
+<tt>[  4] IR_RETURN_VALUE: r3</tt></blockquote>
   * Writing the emit_x64 for asm and interpreter definately feels much simpler than with the AST.
   * Trying to look for ways to write binary ops without having to write a call-graph that resembles an AST. If I want to make fast forward progress I should probably copy-paste my AST call-graph and replace it with outputting IR.
   * Thought: one of the reasons for the AST is to iterate backwards through semantic structures. But I was able to write backwards iteration in just a few lines... hmm...
