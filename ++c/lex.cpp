@@ -4,6 +4,7 @@
 #include <string.h>//memcmp
 #include <stdlib.h>//malloc
 
+static str kMain;
 static str kStrVoid;
 static str kStrInt;
 static str kStrReturn;
@@ -17,9 +18,10 @@ static str kStrContinue;
 
 void init_str_keywords()
 {
-    if (kStrVoid.nts)
+    if (kMain.nts)
         return; // Assume all other strings are also initilized
 
+    kMain = strings_insert_nts("main");
     kStrVoid = strings_insert_nts("void");
     kStrInt = strings_insert_nts("int");
     kStrReturn = strings_insert_nts("return");
@@ -30,6 +32,19 @@ void init_str_keywords()
     kStrDo = strings_insert_nts("do");
     kStrBreak = strings_insert_nts("break");
     kStrContinue = strings_insert_nts("continue");
+}
+
+bool is_str_main(const char* str) {
+    if (str == kMain.nts) return true;
+
+    int len = strlen(str);
+    if (len != kMain.len) return false;
+
+    if (0 == memcmp(str, kMain.nts, len)) {
+        debug_break(); // Uhh... we have a string intern problem
+        return true;
+    }
+    return false;
 }
 
 bool is_letter_or_underscore(char c)

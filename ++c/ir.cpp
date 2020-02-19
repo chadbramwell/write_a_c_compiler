@@ -15,9 +15,13 @@ enum eFailureReason {
     FR_SEMANTIC_ERROR_WRONG_RETURN_TYPE,
     FR_SEMANTIC_ERROR_EXPECTED_SEMICOLON,
     FR_SEMANTIC_ERROR_EXPECTED_EXPRESSION,
+    FR_SEMANTIC_ERROR_UNARY_OP_MISSING_TARGET,
+    FR_SEMANTIC_ERROR_ONLY_MAIN_IS_ALLOWED_TO_HAVE_MISSING_RETURN,
+    FR_SEMANTIC_ERROR_MAIN_WITHOUT_INT_OR_VOID_RETURN_TYPE,
 
     FR_COMPILER_ERROR_VALUE_TYPE_NOT_HANDLED,
     FR_COMPILER_ERROR_MORE_TOKENS_TO_CONSUME,
+    FR_COMPILER_ERROR_MISSING_RETURN_VALUE_IR,
 
     FR_TODO_OTHER_GLOBAL_STUFF_LIKE_INCLUDE_AND_PRAGMA,
     FR_TODO_GLOBAL_VAR,
@@ -46,6 +50,7 @@ struct ir_context
     //ASTNodeArray var_decl_stack; // fixup references
     IR* ir; // used realloc_ir
     size_t irsz;
+    uint64_t next_rid;
 };
 
 static size_t emplace_back_ir(ir_context* ctx)
@@ -68,10 +73,10 @@ static IR* last_ir(ir_context* ctx)
 eVT to_value_type(eToken t)
 {
     switch (t) {
-    case eToken::keyword_void: return VT_VOID;
-    case eToken::keyword_int: return VT_INT;
+    case eToken::keyword_void: return VT_void;
+    case eToken::keyword_int: return VT_uint64;
     }
-    return VT_NOT_VALUE_TYPE;
+    return VT_UNKNOWN;
 }
 
 static eFailureReason global_var_or_func(eVT vt, TokenStream* io_tokens, ir_context* ctx);
@@ -84,7 +89,7 @@ static eFailureReason transform_translation_unit(TokenStream* io_tokens, ir_cont
     while (tokens.next != tokens.end)
     {
         eVT vt = to_value_type(tokens.next->type);
-        if (vt != VT_NOT_VALUE_TYPE)
+        if (vt != VT_UNKNOWN)
         {
             ++tokens.next;
             fr = global_var_or_func(vt, &tokens, ctx);
@@ -134,13 +139,37 @@ static eFailureReason global_var_or_func(eVT vt, TokenStream* io_tokens, ir_cont
     if (tokens.next->type != eToken::closed_curly) RETURN_ERROR(FR_SEMANTIC_ERROR_FUNC_MISSING_CLOSED_PARENS);
     ++tokens.next;
 
-    if (last_ir(ctx)->type != IR_RETURN)
+    const eIR last_type = last_ir(ctx)->type;
+    if (last_type != IR_RETURN && last_type != IR_RETURN_VALUE)
     {
-        if (vt != VT_VOID) RETURN_ERROR(FR_SEMANTIC_ERROR_NOT_ALL_CONTROL_PATHS_RETURN_VALUE);
+        if (is_str_main(id->identifier.nts)) {
+            if (vt == VT_void) {
+                size_t i = emplace_back_ir(ctx);
+                IR* r = ctx->ir + i;
+                r->type = IR_RETURN;
+            } else if (vt == VT_uint64) {
+                const uint64_t zero_rid = ++ctx->next_rid;
 
-        size_t i = emplace_back_ir(ctx);
-        IR* r = ctx->ir + i;
-        r->type = IR_RETURN;
+                size_t i = emplace_back_ir(ctx);
+                IR* r = ctx->ir + i;
+                r->type = IR_CONSTANT;
+                r->constant.value = 0;
+                r->constant.rid = zero_rid;
+
+                i = emplace_back_ir(ctx);
+                r = ctx->ir + i;
+                r->type = IR_RETURN_VALUE;
+                r->retval.rid = zero_rid;
+            } else {
+                RETURN_ERROR(FR_SEMANTIC_ERROR_MAIN_WITHOUT_INT_OR_VOID_RETURN_TYPE);
+            }
+        } else if (vt != VT_void) {
+            RETURN_ERROR(FR_SEMANTIC_ERROR_NOT_ALL_CONTROL_PATHS_RETURN_VALUE);
+        } else {
+            size_t i = emplace_back_ir(ctx);
+            IR* r = ctx->ir + i;
+            r->type = IR_RETURN;
+        }
     }
     
     *io_tokens = tokens;
@@ -182,31 +211,55 @@ static eFailureReason func_interior(TokenStream* io_tokens, ir_context* ctx)
                 RETURN_ERROR(FR_SEMANTIC_ERROR_EXPECTED_EXPRESSION);
             }
 
+            // if it's just a return, handle it
+            if (tokens.next - expr_start == 1
+                && expr_start->type == eToken::keyword_return) {
+                size_t i = emplace_back_ir(ctx);
+                IR* r = ctx->ir + i;
+                r->type = IR_RETURN;
+                continue;
+            }
+
             // write expression in reverse
-            const Token* expr_i = tokens.next - 1;
-            while (expr_i >= expr_start) {
+            uint64_t last_rid = 0;
+            for (const Token* expr_i = tokens.next - 1; expr_i >= expr_start; --expr_i)
+            {
                 size_t i = emplace_back_ir(ctx);
                 IR* r = ctx->ir + i;
                 switch (expr_i->type) {
+
                     case eToken::keyword_return: {
-                        r->type = IR_RETURN;
+                        if (last_rid == 0) {
+                            RETURN_ERROR(FR_COMPILER_ERROR_MISSING_RETURN_VALUE_IR);
+                        }
+                        r->type = IR_RETURN_VALUE;
+                        r->retval.rid = last_rid;
                     } break;
+
                     case eToken::constant_number: {
                         r->type = IR_CONSTANT;
                         r->constant.value = expr_i->number;
+                        r->constant.rid = ++ctx->next_rid;
+                        last_rid = r->constant.rid;
                     } break;
+
                     case '!': case '-': case '~': {
-                        r->type = IR_OP;
-                        r->op = expr_i->type;
+                        if (last_rid == 0) {
+                            RETURN_ERROR(FR_SEMANTIC_ERROR_UNARY_OP_MISSING_TARGET);
+                        }
+                        r->type = IR_UNARY_OP;
+                        r->un.op = expr_i->type;
+                        r->un.rid_from = last_rid;
+                        r->un.rid_to = ++ctx->next_rid;
+                        last_rid = r->un.rid_to;
                     } break;
                 }
-                --expr_i;
             }
         }
 
         // after expression there should be a semicolon
         if (tokens.next->type != eToken::semicolon) RETURN_ERROR(FR_SEMANTIC_ERROR_EXPECTED_SEMICOLON);
-        ++tokens.next; CHECK_OUT_OF_TOKENS;
+        ++tokens.next;
     }
     *io_tokens = tokens;
     return eFailureReason::FR_OKAY;
@@ -234,18 +287,80 @@ bool ir(const Token* tokens, size_t num_tokens, IR** out, size_t* out_size)
     return true;
 }
 
+bool ir_func_interior(const struct Token* tokens, size_t num_tokens, IR** out, size_t* out_size)
+{
+    TokenStream io_tokens;
+    io_tokens.next = tokens;
+    io_tokens.end = tokens + num_tokens;
+
+    ir_context ctx = {};
+
+    eFailureReason fr = func_interior(&io_tokens, &ctx);
+
+    if (fr != FR_OKAY)
+    {
+        debug_break();
+        return false;
+    }
+
+    *out = ctx.ir;
+    *out_size = ctx.irsz;
+
+    return true;
+}
+
+static const char* binop_to_string(uint8_t op) {
+    switch (op) {
+    case '%': return "%"; // mod
+    case '&': return "&"; // bitwise and
+    case '*': return "*"; // mul
+    case '+': return "+"; // add
+    case '-': return "-"; // sub
+    case '/': return "/"; // div
+    case '<': return "<"; // less-than
+    case '>': return ">"; // greater-than
+    case '|': return "|"; // bitwise or
+    case eToken::logical_and: return "&&";
+    case eToken::logical_or: return "||";
+    case eToken::logical_equal: return "==";
+    case eToken::logical_not_equal: return "!=";
+    case eToken::less_than_or_equal: return "<=";
+    case eToken::greater_than_or_equal: return ">=";
+    }
+    debug_break();
+    return "<unknown op> binop_to_string failed.";
+}
+
 void dump_ir(FILE* out, const IR* ir, size_t ir_size) {
     const IR* const ir_end = ir + ir_size;
+    int ir_index = 0;
     while (ir != ir_end) {
 
-        fprintf(out, "\t");
+        fprintf(out, "[%3d] ", ir_index++);
 
         switch (ir->type) {
-        case IR_UNKNOWN: fprintf(out, "IR_UNKNOWN"); break;
+        case IR_UNKNOWN: fprintf(out, "IR_UNKNOWN"); debug_break();  break;
         case IR_RETURN: fprintf(out, "IR_RETURN"); break;
+        case IR_RETURN_VALUE: fprintf(out, "IR_RETURN_VALUE: r%" PRIu64, ir->retval.rid); break;
         case IR_GLOBAL_FUNC: fprintf(out, "IR_GLOBAL_FUNC(%s)", ir->func.name); break;
-        case IR_CONSTANT: fprintf(out, "IR_CONSTANT(%" PRIu64 ")", ir->constant.value); break;
-        case IR_OP: fprintf(out, "IR_OP(%c)", ir->op); break;
+        case IR_CONSTANT: 
+            fprintf(out, "IR_CONSTANT: $%" PRIu64 " -> r%" PRIu64, 
+                ir->constant.value, 
+                ir->constant.rid);
+            break;
+        case IR_UNARY_OP: 
+            fprintf(out, "IR_UNARY_OP: %cr%" PRIu64 " -> r%" PRIu64,
+                ir->un.op,
+                ir->un.rid_from,
+                ir->un.rid_to);
+            break;
+        case IR_BINARY_OP: 
+            fprintf(out, "IR_BINARY_OP: r%" PRIu64 " %s r%" PRIu64 " -> r%" PRIu64, 
+                ir->bin.rid_left,
+                binop_to_string(ir->bin.op),
+                ir->bin.rid_right,
+                ir->bin.rid_out); 
+            break;
         default: debug_break(); fprintf(out, "??? TODO ???"); break;
         }
 

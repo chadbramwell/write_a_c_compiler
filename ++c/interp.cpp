@@ -669,3 +669,73 @@ bool interp_return_value(ASTNode* root, int64_t* out_result)
 
     return true;
 }
+
+
+#include "ir.h"
+#include <map>
+bool interp_ir(const IR* ir, size_t ir_size, int8_t* out_result)
+{
+    if (!ir || !out_result || ir_size == 0)
+        return false;
+
+    std::map<uint64_t, uint64_t> reg_id_to_value;
+
+    uint64_t last_ret_value = ~(uint64_t)0;
+    for (const IR* const ir_end = ir + ir_size; ir < ir_end; ++ir) {
+        switch (ir->type) {
+            case eIR::IR_RETURN_VALUE:
+            {
+                auto read = reg_id_to_value.find(ir->retval.rid);
+                if (read == reg_id_to_value.end()) {
+                    debug_break();
+                    return false;
+                }
+                last_ret_value = read->second;
+            } continue;
+            case eIR::IR_CONSTANT: 
+            {
+                reg_id_to_value[ir->constant.rid] = ir->constant.value;
+            } continue;
+            case eIR::IR_UNARY_OP: 
+            {
+                auto from = reg_id_to_value.find(ir->un.rid_from);
+                if (from == reg_id_to_value.end()) {
+                    debug_break();
+                    return false;
+                }
+                int64_t result = from->second;
+                switch (ir->un.op) {
+                case '!': result = !result; break;
+                case '-': result = -result; break;
+                case '~': result = ~result; break;
+                default:
+                    debug_break();
+                    return false;
+                }
+                reg_id_to_value[ir->un.rid_to] = result;
+            } continue;
+            case eIR::IR_BINARY_OP:
+            {
+                auto left = reg_id_to_value.find(ir->bin.rid_left);
+                auto right = reg_id_to_value.find(ir->bin.rid_right);
+                if (left == reg_id_to_value.end()
+                    || right == reg_id_to_value.end()) {
+                    debug_break();
+                    return false;
+                }
+                uint64_t result = ~(uint64_t)0;
+                switch (ir->bin.op) {
+                case '+': result = left->second + right->second; break;
+                case '*': result = left->second * right->second; break;
+                default: debug_break(); return false; // TODO
+                }
+                reg_id_to_value[ir->bin.rid_out] = result;
+            } continue;
+        }
+        debug_break();
+        return false;
+    }
+    
+    *out_result = (uint8_t)last_ret_value;
+    return true;
+}

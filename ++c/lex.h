@@ -68,6 +68,8 @@ struct str_slice
     const char* end;
 };
 
+bool is_str_main(const char* str);
+
 struct Token
 {
     eToken type;

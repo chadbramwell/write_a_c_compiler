@@ -184,6 +184,12 @@ static void dump(test_config cfg, const test_iter& test)
             dump_lex(stdout, &test.lex_out);
             printf("\n");
         }
+        if (cfg.ir)
+        {
+            printf("=== IR ===\n");
+            dump_ir(stdout, test.ir, test.ir_size);
+            printf("\n");
+        }
         if (cfg.ast)
         {
             printf("=== AST ===\n");
@@ -651,40 +657,133 @@ void interpreter_practice()
     printf("INTERPRETER SUCCESS! RESULT: %" PRIi64 "\n", result);
 }
 
-int run_all_tests()
+bool run_ir_tests()
 {
-    return run_tests_on_folder(0);
+    // test parens with "return -(-64);"
+    {
+        Token tokens[7];
+        tokens[0].type = eToken::keyword_return;
+        tokens[1].type = eToken::dash;
+        tokens[2].type = eToken::open_parens;
+        tokens[3].type = eToken::dash;
+        tokens[4].type = eToken::constant_number; tokens[2].number = 64;
+        tokens[5].type = eToken::closed_parens;
+        tokens[6].type = eToken::semicolon;
+
+        IR* i;
+        size_t ilen;
+        if (!ir_func_interior(tokens, 7, &i, &ilen)) {
+            debug_break();
+            return false;
+        }
+        int8_t result;
+        if (!interp_ir(i, ilen, &result)) {
+            debug_break();
+            return false;
+        }
+        if (result != -(-64)) {
+            debug_break();
+            return false;
+        }
+    }
+
+    // test precedence: 1 + 2 * 3 = 7
+    {
+        Token tokens[5];
+        tokens[0].type = eToken::constant_number; tokens[0].number = 1;
+        tokens[1].type = eToken::plus;
+        tokens[2].type = eToken::constant_number; tokens[2].number = 2;
+        tokens[3].type = eToken::star;
+        tokens[4].type = eToken::constant_number; tokens[4].number = 3;
+
+        IR* i;
+        size_t ilen;
+        if (!ir_func_interior(tokens, 5, &i, &ilen)) {
+            debug_break();
+            return false;
+        }
+        int8_t result;
+        if (!interp_ir(i, ilen, &result)) {
+            debug_break();
+            return false;
+        }
+        if (result != 7) {
+            debug_break();
+            return false;
+        }
+    }
+
+    // test precedence: 1 * 2 + 3 = 5
+    {
+        Token tokens[5];
+        tokens[0].type = eToken::constant_number; tokens[0].number = 1;
+        tokens[1].type = eToken::star;
+        tokens[2].type = eToken::constant_number; tokens[2].number = 2;
+        tokens[3].type = eToken::plus;
+        tokens[4].type = eToken::constant_number; tokens[4].number = 3;
+
+        IR* i;
+        size_t ilen;
+        if (!ir_func_interior(tokens, 5, &i, &ilen)) {
+            debug_break();
+            return false;
+        }
+        int8_t result;
+        if (!interp_ir(i, ilen, &result)) {
+            debug_break();
+            return false;
+        }
+        if (result != 5) {
+            debug_break();
+            return false;
+        }
+    }
+
+
+
+    return true;
 }
 
-int run_tests_on_folder(int folder_index)
+int run_all_tests()
+{
+    return run_tests_on_folder(0, false);
+}
+
+int run_tests_on_folder(int folder_index, bool verbose)
 {
     perf_numbers perf;
 
     test_config TEST_LEX = {};
     TEST_LEX.lex = true;
+    //TEST_LEX.dump = verbose;
 
     test_config TEST_IR = {};
     TEST_IR.lex = true;
     TEST_IR.ir = true;
+    TEST_IR.dump = verbose;
 
     test_config TEST_INVALID_LEX = {};
     TEST_INVALID_LEX.lex = true;
     TEST_INVALID_LEX.expect_lex_fail = true;
+    //TEST_INVALID_LEX.dump = verbose;
 
     test_config TEST_GEN = {};
     TEST_GEN.lex = true;
     TEST_GEN.ast = true;
     TEST_GEN.gen = true;
+    //TEST_GEN.dump = verbose;
 
     test_config TEST_IR_GEN = {};
     TEST_IR_GEN.lex = true;
     TEST_IR_GEN.ir = true;
     TEST_IR_GEN.gen = true;
+    TEST_IR_GEN.dump = verbose;
 
     test_config TEST_INTERP = {};
     TEST_INTERP.lex = true;
     TEST_INTERP.ast = true;
     TEST_INTERP.interp = true;
+    //TEST_INTERP.dump = verbose;
 
     Timer timer;
     timer.start();
@@ -702,7 +801,7 @@ int run_tests_on_folder(int folder_index)
     {
     case 0: // test all
         printf("=== RUNNING ALL TESTS\n");
-    case 1:
+    case 1: // int main(){return <constant>;}
         Test(TEST_LEX, &perf, "../stage_1/valid/");
         Test(TEST_LEX, &perf, "../stage_1/invalid/");
         Test(TEST_IR, &perf, "../stage_1/valid/");
@@ -712,7 +811,7 @@ int run_tests_on_folder(int folder_index)
         cleanup_artifacts(&perf.cleanup, "../stage_1/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_1/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not
-    case 2:
+    case 2: // unary ops
         Test(TEST_LEX, &perf, "../stage_2/valid/");
         Test(TEST_LEX, &perf, "../stage_2/invalid/");
         Test(TEST_IR, &perf, "../stage_2/valid/");
@@ -722,11 +821,12 @@ int run_tests_on_folder(int folder_index)
         cleanup_artifacts(&perf.cleanup, "../stage_2/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_2/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not
-    case 3:
+    case 3: // binary ops and parens and precedence
         Test(TEST_LEX, &perf, "../stage_3/valid/");
         Test(TEST_LEX, &perf, "../stage_3/invalid/");
         Test(TEST_INTERP, &perf, "../stage_3/valid/");
         Test(TEST_GEN, &perf, "../stage_3/valid/");
+        //Test(TEST_IR_GEN, &perf, "../stage_3/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_3/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_3/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not
@@ -738,6 +838,8 @@ int run_tests_on_folder(int folder_index)
         Test(TEST_INTERP, &perf, "../stage_4/valid_skip_on_failure/");
         Test(TEST_GEN, &perf, "../stage_4/valid/");
         Test(TEST_GEN, &perf, "../stage_4/valid_skip_on_failure/");
+        //Test(TEST_IR_GEN, &perf, "../stage_4/valid/");
+        //Test(TEST_IR_GEN, &perf, "../stage_4/valid_skip_on_failure/");
         cleanup_artifacts(&perf.cleanup, "../stage_4/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_4/valid_skip_on_failure/");
         cleanup_artifacts(&perf.cleanup, "../stage_4/invalid/");

@@ -10,13 +10,20 @@ int main(int argc, char** argv)
     // handle global-opt-out flags
     for (int i = 1; i < argc; ++i)
     {
+        // if -irtest, run ir tests
+        if (0 == strcmp(argv[i], "-irtest")
+            || 0 == strcmp(argv[i], "-testir"))
+        {
+            return run_ir_tests();
+        }
+
         // if -test is specified, ignore rest of command-line
         if (0 == strcmp(argv[i], "-test"))
         {
             if (i + 1 < argc)
             {
                 int folder_index = atoi(argv[i + 1]);
-                return run_tests_on_folder(folder_index);
+                return run_tests_on_folder(folder_index, true);
             }
             return run_all_tests();
         }

@@ -980,18 +980,41 @@ bool gen_asm(FILE* file, const ASTNode* ast_root)
     return true;
 }
 
-static bool emit_asm_x64(FILE* out, const IR* ir) {
+static bool emit_asm_x64(FILE* out, const IR* ir, uint64_t* io_last_rid) {
     switch (ir->type) {
     case eIR::IR_GLOBAL_FUNC:
         fprintf(out, "  .globl %s\n", ir->func.name);
         fprintf(out, "%s:\n", ir->func.name);
         return true;
     case eIR::IR_RETURN:
-        fprintf(out, "  ret\n"); return true;
+        fprintf(out, "  ret\n");
+        return true;
+    case eIR::IR_RETURN_VALUE:
+        if (*io_last_rid == 0) {
+            debug_break(); // compiler error: we require something to return
+            return false;
+        }
+        if (*io_last_rid != ir->retval.rid) {
+            debug_break(); // TODO: currently we only support using %rax
+            return false;
+        }
+        fprintf(out, "  ret\n");
+        return true;
     case eIR::IR_CONSTANT:
-        fprintf(out, "  mov $%" PRIu64 ", %%rax\n", ir->constant.value); return true;
-    case eIR::IR_OP:
-        switch (ir->op)
+        fprintf(out, "  mov $%" PRIu64 ", %%rax\n", ir->constant.value);
+        *io_last_rid = ir->constant.rid;
+        return true;
+    case eIR::IR_UNARY_OP:
+        if (*io_last_rid == 0) {
+            debug_break(); // compiler error: we require something to unop
+            return false;
+        }
+        if (*io_last_rid != ir->un.rid_from) {
+            debug_break(); // TODO: currently we only support using %rax
+            return false;
+        }
+        *io_last_rid = ir->un.rid_to;
+        switch (ir->un.op)
         {
         case '-': fprintf(out, "  neg %%rax\n"); return true;
         case '~': fprintf(out, "  not %%rax\n"); return true;
@@ -1001,10 +1024,10 @@ static bool emit_asm_x64(FILE* out, const IR* ir) {
             fprintf(out, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
             return true;
         }
-        debug_break();
+        debug_break(); // TODO: Unary op?
         return false;
     }
-    debug_break();
+    debug_break(); // TODO: new IR?
     return false;
 }
 
@@ -1018,10 +1041,11 @@ bool gen_asm_from_ir(FILE* out, const IR* ir, size_t ir_size)
     // TODO: handle multiple global funcs and search for entry point
     assert(ir[0].type == eIR::IR_GLOBAL_FUNC);
 
+    uint64_t last_rid = 0;
     const IR* const ir_end = ir + ir_size;
     while (ir != ir_end)
     {
-        if (!emit_asm_x64(out, ir))
+        if (!emit_asm_x64(out, ir, &last_rid))
             return false;
         ++ir;
     }

@@ -200,6 +200,16 @@ Well, wtf, what a trashfire. The most important step (4) where I would think the
 * 2/18/2020 - **STAGE 2 IR-GEN TESTS PASS!**
   * Spent 2 hours getting ir stage 2 working!
   * Also spent some time (maybe on 2/16) on adding debug_breaks for ir failures so I can easily track down what needs to be fixed.
+  * Spent 2 hours adding SSA ([Static Single Assignment form](https://en.wikipedia.org/wiki/Static_single_assignment_form)) registers to IR. Also spent some time writing simplified ir tests (tokens->ir->interp). And the start of an ir interpreter. Run ir tests with `-testir` or `-irtest`
+  * Also improved IR output. <tt>
+<br>[  0] IR_GLOBAL_FUNC(main)
+<br>[  1] IR_CONSTANT: $3 -> r1
+<br>[  2] IR_UNARY_OP: -r1 -> r2
+<br>[  3] IR_UNARY_OP: !r2 -> r3
+<br>[  4] IR_RETURN_VALUE: r3</tt>
+  * Writing the emit_x64 for asm and interpreter definately feels much simpler than with the AST.
+  * Trying to look for ways to write binary ops without having to write a call-graph that resembles an AST. If I want to make fast forward progress I should probably copy-paste my AST call-graph and replace it with outputting IR.
+  * Thought: one of the reasons for the AST is to iterate backwards through semantic structures. But I was able to write backwards iteration in just a few lines... hmm...
 
 ## Performance Status
 A lot of work to be done optimizing. Some info: 
@@ -408,6 +418,26 @@ Perf Results      [samples,      total,        avg,        low,       high]
   cleanup:        [     29,     2.43ms,     0.08ms,     0.04ms,     0.25ms]
  test cache misses: 0, load: 0.20ms, save: 1.58ms
 Unaccounted for: 404.12ms
+```
+Adding SSA (single-static assignment) registers to IR.
+```
+457 Tests took 22769.22ms
+Perf Results      [samples,      total,        avg,        low,       high]
+  read_file:      [    457,    37.65ms,     0.08ms,     0.05ms,     0.46ms]
+  invalid_lex:    [      4,     0.03ms,     0.01ms,     0.00ms,     0.01ms]
+  lex:            [    453,     7.49ms,     0.02ms,     0.00ms,     0.12ms]
+  lex_strip:      [    453,     3.14ms,     0.01ms,     0.00ms,     0.08ms]
+  ir:             [     26,     0.06ms,     0.00ms,     0.00ms,     0.01ms]
+  ast:            [    246,     4.28ms,     0.02ms,     0.00ms,     0.14ms]
+  gen_asm:        [    123,    11.95ms,     0.10ms,     0.03ms,     0.38ms]
+  gen_asm_from_ir:[     13,     0.46ms,     0.04ms,     0.01ms,     0.08ms]
+  gen_exe:        [    136, 16011.25ms,   117.73ms,   106.56ms,   455.39ms]
+  run_exe:        [    136,  6075.17ms,    44.67ms,    41.33ms,    68.66ms]
+  grnd_truth:     [    259,     0.26ms,     0.00ms,     0.00ms,     0.02ms]
+  interp:         [    123,    16.33ms,     0.13ms,     0.00ms,     8.79ms]
+  cleanup:        [     29,     2.49ms,     0.09ms,     0.05ms,     0.24ms]
+ test cache misses: 0, load: 0.19ms, save: 1.43ms
+Unaccounted for: 597.04ms
 ```
 
 ## TODO (other than Stages)
