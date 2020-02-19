@@ -61,9 +61,8 @@ struct test_iter
     IR* ir;
     size_t ir_size;
 
-    ASTOut ast_out;
+    ASTOut ast;
 
-    AsmInput asm_in;
     char asm_file_path[L_tmpnam_s + 2]; // NOTE: +2 for .s
     char exe_file_path[L_tmpnam_s + 4]; // NOTE: +4 for .exe
     char clang_buffer[1024];
@@ -188,15 +187,24 @@ static void dump(test_config cfg, const test_iter& test)
         if (cfg.ast)
         {
             printf("=== AST ===\n");
-            dump_ast(stdout, test.ast_out.root, 0);
+            dump_ast(stdout, test.ast.root, 0);
             //dump_ast_errors(stdout, )
             printf("\n");
         }
         if (cfg.gen)
         {
-            printf("=== GEN ASSEMBLY ===\n");
-            gen_asm(stdout, test.asm_in);
-            printf("\n");
+            if (cfg.ast)
+            {
+                printf("=== GEN ASSEMBLY (from AST) ===\n");
+                gen_asm(stdout, test.ast.root);
+                printf("\n");
+            }
+            if (cfg.ir)
+            {
+                printf("=== GEN ASSEMBLY (from IR) ===\n");
+                gen_asm_from_ir(stdout, test.ir, test.ir_size);
+                printf("\n");
+            }
 
             fprintf(stdout, "Clang's ASM==[\n");
 
@@ -306,7 +314,7 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         if (cfg.ast)
         {
             timer.start();
-            if (!ast(test.lex_out.tokens, test.lex_out.num_tokens, &test.ast_out))
+            if (!ast(test.lex_out.tokens, test.lex_out.num_tokens, &test.ast))
             {
                 printf("failed to ast file %s\n", test.file_path);
                 success = false;
@@ -338,8 +346,6 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         ///// ASM
         if (cfg.gen)
         {
-            test.asm_in.root = test.ast_out.root;
-
             errno_t err = tmpnam_s(test.asm_file_path);
             if (err) debug_break();
             err = tmpnam_s(test.exe_file_path);
@@ -363,12 +369,12 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                     if (err) debug_break();
 
                     timer.start();
-                    if (!gen_asm(file, test.asm_in))
+                    if (!gen_asm(file, test.ast.root))
                     {
                         printf("failed to gen asm for %s\n", test.file_path);
                         success = false;
                         ++test_fail;
-                        gen_asm(stdout, test.asm_in);
+                        gen_asm(stdout, test.ast.root);
                         continue;
                     }
                     timer.end();
@@ -382,7 +388,7 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                 if (int clang_error = system(test.clang_buffer))
                 {
                     printf("Clang Failed with %d\n", clang_error);
-                    gen_asm(stdout, test.asm_in);
+                    gen_asm(stdout, test.ast.root);
                     success = false;
                     ++test_fail;
                     debug_break();
@@ -404,7 +410,7 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
                         printf("failed to gen asm for %s\n", test.file_path);
                         success = false;
                         ++test_fail;
-                        gen_asm(stdout, test.asm_in);
+                        gen_asm(stdout, test.ast.root);
                         continue;
                     }
                     timer.end();
@@ -454,7 +460,7 @@ static void Test(test_config cfg, perf_numbers* perf, const char* path)
         {
             test.interp_result;
             timer.start();
-            if (!interp_return_value(test.ast_out.root, &test.interp_result))
+            if (!interp_return_value(test.ast.root, &test.interp_result))
             {
                 debug_break();
                 printf("Interp failed for [%s].\n", test.file_path);
@@ -709,8 +715,10 @@ int run_tests_on_folder(int folder_index)
     case 2:
         Test(TEST_LEX, &perf, "../stage_2/valid/");
         Test(TEST_LEX, &perf, "../stage_2/invalid/");
+        Test(TEST_IR, &perf, "../stage_2/valid/");
         Test(TEST_INTERP, &perf, "../stage_2/valid/");
         Test(TEST_GEN, &perf, "../stage_2/valid/");
+        Test(TEST_IR_GEN, &perf, "../stage_2/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_2/valid/");
         cleanup_artifacts(&perf.cleanup, "../stage_2/invalid/");
         if (folder_index != 0) break; // quit if 0 or fall-through if not

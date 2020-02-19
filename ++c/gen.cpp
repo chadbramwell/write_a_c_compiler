@@ -868,9 +868,9 @@ bool gen_asm_node(gen_ctx* ctx, const ASTNode* n)
     return false;
 }
 
-bool gen_asm(FILE* file, const AsmInput& input)
+bool gen_asm(FILE* file, const ASTNode* ast_root)
 {
-    if (input.root->type != AST_program)
+    if (ast_root->type != AST_program)
     {
         debug_break();
         return false;
@@ -910,9 +910,9 @@ bool gen_asm(FILE* file, const AsmInput& input)
     */
 
     // expose all global functions and find all global vars
-    for (uint32_t i = 0; i < input.root->program.size; ++i)
+    for (uint32_t i = 0; i < ast_root->program.size; ++i)
     {
-        ASTNode* n = input.root->program.nodes[i];
+        ASTNode* n = ast_root->program.nodes[i];
         if (n->type == AST_fdef)
         {
             fprintf(ctx->out, "  .globl %s\n", n->fdef.name.nts);
@@ -962,9 +962,9 @@ bool gen_asm(FILE* file, const AsmInput& input)
     }
     if (ctx->num_global_vars > 0) fprintf(ctx->out, "  .text\n");
 
-    for (uint32_t i = 0; i < input.root->program.size; ++i)
+    for (uint32_t i = 0; i < ast_root->program.size; ++i)
     {
-        ASTNode* n = input.root->program.nodes[i];
+        ASTNode* n = ast_root->program.nodes[i];
         if (n->type == AST_fdef)
         {
             
@@ -980,21 +980,50 @@ bool gen_asm(FILE* file, const AsmInput& input)
     return true;
 }
 
-bool gen_asm_from_ir(FILE* out, const IR* ir, size_t ir_size)
-{
-    if (ir == nullptr || ir_size < 2) {
+static bool emit_asm_x64(FILE* out, const IR* ir) {
+    switch (ir->type) {
+    case eIR::IR_GLOBAL_FUNC:
+        fprintf(out, "  .globl %s\n", ir->func.name);
+        fprintf(out, "%s:\n", ir->func.name);
+        return true;
+    case eIR::IR_RETURN:
+        fprintf(out, "  ret\n"); return true;
+    case eIR::IR_CONSTANT:
+        fprintf(out, "  mov $%" PRIu64 ", %%rax\n", ir->constant.value); return true;
+    case eIR::IR_OP:
+        switch (ir->op)
+        {
+        case '-': fprintf(out, "  neg %%rax\n"); return true;
+        case '~': fprintf(out, "  not %%rax\n"); return true;
+        case '!':
+            fprintf(out, "  cmp $0, %%rax\n"); // set ZF on if exp == 0, set it off otherwise
+            fprintf(out, "  mov $0, %%rax\n"); // zero out EAX (doesn't change FLAGS), xor %eax %eax is better because it sets a flag we can't use it because we depend on the ZF flag on the next line
+            fprintf(out, "  sete %%al\n"); //set AL register (the lower byte of EAX) to 1 iff ZF is on
+            return true;
+        }
         debug_break();
         return false;
     }
-    if (ir[0].type != eIR::IR_GLOBAL_FUNC) {
-        debug_break(); // TODO
+    debug_break();
+    return false;
+}
+
+bool gen_asm_from_ir(FILE* out, const IR* ir, size_t ir_size)
+{
+    if (!ir || ir_size <= 0) {
+        debug_break();
         return false;
     }
-    fprintf(out, "  .globl %s\n", ir[0].func.name);
-    fprintf(out, "%s:\n", ir[0].func.name);
-    assert(ir[1].type == eIR::IR_RETURN_CONSTANT);
-    fprintf(out, "  mov $%" PRIu64 ", %%eax\n", ir[1].constant.value);
-    fprintf(out, "  ret\n");
 
+    // TODO: handle multiple global funcs and search for entry point
+    assert(ir[0].type == eIR::IR_GLOBAL_FUNC);
+
+    const IR* const ir_end = ir + ir_size;
+    while (ir != ir_end)
+    {
+        if (!emit_asm_x64(out, ir))
+            return false;
+        ++ir;
+    }
     return true;
 }

@@ -14,28 +14,31 @@
 
 enum eIR { // Intermediate Representation
     IR_UNKNOWN,
+    IR_RETURN,
     IR_GLOBAL_FUNC,
-    IR_RETURN_VOID,
-    IR_RETURN_CONSTANT,
+    IR_CONSTANT,
+    IR_OP,
 };
 enum eVT { // Value Type
     VT_NOT_VALUE_TYPE,
-    VT_INT,
     VT_VOID,
+    VT_BOOL,
+    VT_INT,
 };
 
 struct IR
 {
     eIR type;
     union {
-        struct {
+        struct { // IR_GLOBAL_FUNC
             eVT return_type;
             const char* name;
             eVT* params;
         } func;
-        struct {
+        struct { // IR_CONSTANT
             uint64_t value;
         } constant;
+        uint8_t op; // IR_OP
     };
 };
 
